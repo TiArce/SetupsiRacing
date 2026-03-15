@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NASCAR Next Gen – Engenheiro Virtual iRacing</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <!-- HEADER -->
+  <header id="app-header">
+    <div class="header-left">
+      <div class="logo-block">
+        <span class="logo-flag">🏁</span>
+        <div>
+          <div class="logo-title">NASCAR Next Gen</div>
+          <div class="logo-sub">Engenheiro Virtual · iRacing Class A</div>
+        </div>
+      </div>
+    </div>
+    <nav class="main-nav">
+      <button class="nav-btn active" data-page="dashboard">📊 Dashboard</button>
+      <button class="nav-btn" data-page="setup">🔧 Setup Analyzer</button>
+      <button class="nav-btn" data-page="diagnosis">🎯 Diagnóstico</button>
+      <button class="nav-btn" data-page="tracks">🏟️ Pistas</button>
+      <button class="nav-btn" data-page="dynamics">📐 Dinâmica</button>
+      <button class="nav-btn" data-page="history">📁 Histórico</button>
+      <button class="nav-btn" data-page="engineer">🤖 Engenheiro IA</button>
+    </nav>
+    <div class="header-right">
+      <div class="status-pill" id="session-status">● Sessão Ativa</div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main id="app-main">
+
+    <!-- ===== PAGE: DASHBOARD ===== -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-hero">
+        <div class="hero-content">
+          <h1>Bem-vindo ao <span class="accent">Engenheiro Virtual</span></h1>
+          <p>Sistema avançado de engenharia de setups para NASCAR Next Gen · iRacing Class A Cup Series</p>
+          <div class="hero-actions">
+            <button class="btn-primary" onclick="navigateTo('setup')">📥 Carregar Setup</button>
+            <button class="btn-secondary" onclick="navigateTo('engineer')">🤖 Falar com Engenheiro</button>
+          </div>
+        </div>
+        <div class="hero-car">
+          <div class="car-silhouette">
+            <svg viewBox="0 0 400 160" xmlns="http://www.w3.org/2000/svg">
+              <!-- Car body -->
+              <ellipse cx="200" cy="120" rx="185" ry="18" fill="#1a1a2e" opacity="0.4"/>
+              <!-- Main body -->
+              <path d="M30 110 L50 110 L70 75 L100 60 L140 50 L200 48 L260 50 L300 60 L330 75 L350 110 Z" fill="#e8a000" stroke="#ffd700" stroke-width="2"/>
+              <!-- Roof -->
+              <path d="M100 60 L120 38 L160 28 L200 26 L240 28 L280 38 L300 60 Z" fill="#cc8800" stroke="#ffd700" stroke-width="1.5"/>
+              <!-- Windows -->
+              <path d="M115 58 L128 40 L160 32 L200 30 L240 32 L272 40 L285 58 Z" fill="#0a1628" opacity="0.85"/>
+              <!-- #18 number -->
+              <text x="195" y="88" text-anchor="middle" fill="white" font-size="22" font-weight="bold" font-family="Arial">18</text>
+              <!-- Front wheel -->
+              <circle cx="90" cy="112" r="22" fill="#222" stroke="#555" stroke-width="3"/>
+              <circle cx="90" cy="112" r="12" fill="#444" stroke="#888" stroke-width="2"/>
+              <!-- Rear wheel -->
+              <circle cx="310" cy="112" r="22" fill="#222" stroke="#555" stroke-width="3"/>
+              <circle cx="310" cy="112" r="12" fill="#444" stroke="#888" stroke-width="2"/>
+              <!-- Front spoiler -->
+              <rect x="28" y="108" width="60" height="6" rx="2" fill="#cc8800"/>
+              <!-- Rear spoiler -->
+              <rect x="312" y="50" width="40" height="5" rx="2" fill="#ffd700" transform="rotate(-5,332,52)"/>
+              <rect x="350" y="52" width="6" height="30" rx="1" fill="#ffd700"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="dashboard-grid">
+        <div class="dash-card" id="current-track-card">
+          <div class="dash-card-icon">🏟️</div>
+          <div class="dash-card-content">
+            <div class="dash-card-label">Pista Atual</div>
+            <div class="dash-card-value" id="dc-track">Nenhuma selecionada</div>
+          </div>
+        </div>
+        <div class="dash-card" id="current-setup-card">
+          <div class="dash-card-icon">🔧</div>
+          <div class="dash-card-content">
+            <div class="dash-card-label">Setup Carregado</div>
+            <div class="dash-card-value" id="dc-setup">Aguardando...</div>
+          </div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-icon">📁</div>
+          <div class="dash-card-content">
+            <div class="dash-card-label">Setups Salvos</div>
+            <div class="dash-card-value" id="dc-history">0</div>
+          </div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-icon">🎯</div>
+          <div class="dash-card-content">
+            <div class="dash-card-label">Diagnósticos</div>
+            <div class="dash-card-value" id="dc-diagnosis">0 realizados</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick access -->
+      <div class="quick-access-grid">
+        <div class="qa-card" onclick="navigateTo('diagnosis')">
+          <div class="qa-icon">🎯</div>
+          <div class="qa-title">Diagnóstico Rápido</div>
+          <div class="qa-desc">Descreva o comportamento do carro e receba sugestões</div>
+        </div>
+        <div class="qa-card" onclick="navigateTo('tracks')">
+          <div class="qa-icon">🏟️</div>
+          <div class="qa-title">Banco de Pistas</div>
+          <div class="qa-desc">Selecione uma pista e veja recomendações específicas</div>
+        </div>
+        <div class="qa-card" onclick="navigateTo('dynamics')">
+          <div class="qa-icon">📐</div>
+          <div class="qa-title">Dinâmica Veicular</div>
+          <div class="qa-desc">Visualize como cada ajuste afeta o comportamento</div>
+        </div>
+        <div class="qa-card" onclick="navigateTo('engineer')">
+          <div class="qa-icon">🤖</div>
+          <div class="qa-title">Engenheiro Virtual IA</div>
+          <div class="qa-desc">Chat interativo com engenheiro especializado</div>
+        </div>
+      </div>
+
+      <!-- Pitstop Adjustments Reference -->
+      <div class="section-header"><span>🔄 Referência Rápida – Ajustes de Pit Stop</span></div>
+      <div class="pitstop-matrix">
+        <div class="pm-header">
+          <div>Problema de Handling</div>
+          <div>Brake Bias</div>
+          <div>LF PSI</div>
+          <div>LR PSI</div>
+          <div>RF PSI</div>
+          <div>RR PSI</div>
+          <div>Spring Perch L.Rear</div>
+          <div>Spring Perch R.Rear</div>
+        </div>
+        <div class="pm-row loose">
+          <div class="pm-label">🔴 Loose Entry</div>
+          <div class="pm-val up">↑ Mais dianteiro</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val pos">+0.031</div>
+          <div class="pm-val pos">+0.031</div>
+        </div>
+        <div class="pm-row loose">
+          <div class="pm-label">🔴 Loose Center</div>
+          <div class="pm-val up">↑ Mais dianteiro</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neg">-0.031</div>
+          <div class="pm-val pos">+0.031</div>
+        </div>
+        <div class="pm-row loose">
+          <div class="pm-label">🔴 Loose Exit</div>
+          <div class="pm-val">Direção +</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val pos">+0.031</div>
+          <div class="pm-val pos">+0.031</div>
+        </div>
+        <div class="pm-row tight">
+          <div class="pm-label">🔵 Tight Entry</div>
+          <div class="pm-val down">↓ Mais traseiro</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val neg">-0.031</div>
+          <div class="pm-val neg">-0.031</div>
+        </div>
+        <div class="pm-row tight">
+          <div class="pm-label">🔵 Tight Center</div>
+          <div class="pm-val down">↓ Mais traseiro</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val pos">+0.031</div>
+          <div class="pm-val neg">-0.031</div>
+        </div>
+        <div class="pm-row tight">
+          <div class="pm-label">🔵 Tight Exit</div>
+          <div class="pm-val down">↓ Mais traseiro</div>
+          <div class="pm-val neu">0</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val neg">-1</div>
+          <div class="pm-val pos">+1</div>
+          <div class="pm-val neu">0.000</div>
+          <div class="pm-val neg">-0.031</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAGE: SETUP ANALYZER ===== -->
+    <section class="page" id="page-setup">
+      <div class="page-title-bar">
+        <h2>🔧 Setup Analyzer – NASCAR Next Gen</h2>
+        <p>Cole ou insira seu setup completo do iRacing para análise automática</p>
+      </div>
+
+      <div class="setup-layout">
+        <!-- Left: Input -->
+        <div class="setup-input-panel">
+          <div class="panel-header">📥 Entrada de Setup</div>
+          <div class="input-tabs">
+            <button class="itab active" data-tab="paste">Cole o Setup</button>
+            <button class="itab" data-tab="manual">Entrada Manual</button>
+            <button class="itab" data-tab="templates">Templates</button>
+          </div>
+
+          <!-- Paste tab -->
+          <div class="itab-content active" id="tab-paste">
+            <div class="form-group">
+              <label>Cole o conteúdo do arquivo .sto ou texto do setup:</label>
+              <textarea id="setup-input" rows="20" placeholder="[TIRE]&#10;leftFrontColdPressure=28&#10;rightFrontColdPressure=28&#10;leftRearColdPressure=22&#10;rightRearColdPressure=24&#10;&#10;[CHASSIS]&#10;frontBrakeBias=54.0&#10;noseWeight=52.0&#10;crossWeight=50.0&#10;..."></textarea>
+            </div>
+            <button class="btn-primary full-width" onclick="parseSetupText()">🔍 Analisar Setup</button>
+          </div>
+
+          <!-- Manual tab -->
+          <div class="itab-content" id="tab-manual">
+            <div class="manual-setup-form" id="manual-form">
+              <!-- Tires Section -->
+              <div class="mf-section">
+                <div class="mf-section-title">🛞 Pneus – Pressão Fria (PSI)</div>
+                <div class="mf-grid-4">
+                  <div class="mf-field">
+                    <label>LF</label>
+                    <input type="number" id="mf-lf-psi" value="28" step="0.5" min="15" max="45"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF</label>
+                    <input type="number" id="mf-rf-psi" value="28" step="0.5" min="15" max="45"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LR</label>
+                    <input type="number" id="mf-lr-psi" value="22" step="0.5" min="15" max="45"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RR</label>
+                    <input type="number" id="mf-rr-psi" value="24" step="0.5" min="15" max="45"/>
+                  </div>
+                </div>
+              </div>
+              <!-- Springs -->
+              <div class="mf-section">
+                <div class="mf-section-title">🌀 Molas (lbs/in)</div>
+                <div class="mf-grid-4">
+                  <div class="mf-field">
+                    <label>LF Spring</label>
+                    <input type="number" id="mf-lf-spring" value="550" step="25" min="150" max="2500"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF Spring</label>
+                    <input type="number" id="mf-rf-spring" value="600" step="25" min="150" max="2500"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LR Spring</label>
+                    <input type="number" id="mf-lr-spring" value="200" step="25" min="100" max="2000"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RR Spring</label>
+                    <input type="number" id="mf-rr-spring" value="225" step="25" min="100" max="2000"/>
+                  </div>
+                </div>
+              </div>
+              <!-- Ride Heights -->
+              <div class="mf-section">
+                <div class="mf-section-title">📏 Ride Height (in)</div>
+                <div class="mf-grid-4">
+                  <div class="mf-field">
+                    <label>LF RH</label>
+                    <input type="number" id="mf-lf-rh" value="3.5" step="0.1" min="1" max="8"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF RH</label>
+                    <input type="number" id="mf-rf-rh" value="3.2" step="0.1" min="1" max="8"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LR RH</label>
+                    <input type="number" id="mf-lr-rh" value="5.5" step="0.1" min="1" max="10"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RR RH</label>
+                    <input type="number" id="mf-rr-rh" value="4.8" step="0.1" min="1" max="10"/>
+                  </div>
+                </div>
+              </div>
+              <!-- Chassis -->
+              <div class="mf-section">
+                <div class="mf-section-title">⚖️ Peso & Geometria</div>
+                <div class="mf-grid-3">
+                  <div class="mf-field">
+                    <label>Nose Weight %</label>
+                    <input type="number" id="mf-nose" value="52.0" step="0.1" min="48" max="56"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>Cross Weight %</label>
+                    <input type="number" id="mf-cross" value="50.0" step="0.1" min="46" max="54"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>Brake Bias %</label>
+                    <input type="number" id="mf-bb" value="54.0" step="0.1" min="48" max="62"/>
+                  </div>
+                </div>
+              </div>
+              <!-- Camber/Caster/Toe -->
+              <div class="mf-section">
+                <div class="mf-section-title">📐 Geometria – Câmbio/Caster/Toe</div>
+                <div class="mf-grid-4">
+                  <div class="mf-field">
+                    <label>LF Camber</label>
+                    <input type="number" id="mf-lf-camber" value="3.5" step="0.1" min="0" max="6"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF Camber</label>
+                    <input type="number" id="mf-rf-camber" value="-4.5" step="0.1" min="-7" max="0"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LF Caster</label>
+                    <input type="number" id="mf-lf-caster" value="4.0" step="0.1" min="2" max="8"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF Caster</label>
+                    <input type="number" id="mf-rf-caster" value="6.0" step="0.1" min="2" max="10"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LF Toe</label>
+                    <input type="number" id="mf-lf-toe" value="0.05" step="0.01" min="-0.2" max="0.2"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RF Toe</label>
+                    <input type="number" id="mf-rf-toe" value="-0.05" step="0.01" min="-0.2" max="0.2"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>LR Camber</label>
+                    <input type="number" id="mf-lr-camber" value="0.5" step="0.1" min="-2" max="3"/>
+                  </div>
+                  <div class="mf-field">
+                    <label>RR Camber</label>
+                    <input type="number" id="mf-rr-camber" value="-3.0" step="0.1" min="-5" max="0"/>
+                  </div>
+                </div>
+              </div>
+              <!-- ARB -->
+              <div class="mf-section">
+                <div class="mf-section-title">🔗 Anti-Roll Bar (ARB)</div>
+                <div class="mf-grid-4">
+                  <div class="mf-field">
+                    <label>Front Diameter</label>
+                    <select id="mf-f-arb-diam">
+                      <option value="2.00">2.00" (Rígido)</option>
+                      <option value="1.375" selected>1.375" (Macio)</option>
+                    </select>
+                  </div>
+                  <div class="mf-field">
+                    <label>Front ARB Arm</label>
+                    <select id="mf-f-arb-arm">
+                      <option value="1">P1 (Mais macio)</option>
+                      <option value="2">P2</option>
+                      <option value="3" selected>P3</option>
+                      <option value="4">P4</option>
+                      <option value="5">P5 (Mais rígido)</option>
+                    </select>
+                  </div>
+                  <div class="mf-field">
+                    <label>Rear Diameter</label>
+                    <select id="mf-r-arb-diam">
+                      <option value="2.00">2.00" (Rígido)</option>
+                      <option value="1.375" selected>1.375" (Macio)</option>
+                    </select>
+                  </div>
+                  <div class="mf-field">
+                    <label>Rear ARB Arm</label>
+                    <select id="mf-r-arb-arm">
+                      <option value="1">P1 (Mais macio)</option>
+                      <option value="2">P2</option>
+                      <option value="3" selected>P3</option>
+                      <option value="4">P4</option>
+                      <option value="5">P5 (Mais rígido)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <!-- Shocks -->
+              <div class="mf-section">
+                <div class="mf-section-title">🔩 Amortecedores</div>
+                <div class="shock-grid">
+                  <div class="shock-corner">
+                    <div class="sc-label">LF</div>
+                    <div class="sc-fields">
+                      <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-lf-lsc" value="5" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-lf-hsc" value="4" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-lf-lsr" value="6" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-lf-hsr" value="5" step="1" min="1" max="12"/></div>
+                    </div>
+                  </div>
+                  <div class="shock-corner">
+                    <div class="sc-label">RF</div>
+                    <div class="sc-fields">
+                      <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-rf-lsc" value="6" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-rf-hsc" value="5" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-rf-lsr" value="7" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-rf-hsr" value="6" step="1" min="1" max="12"/></div>
+                    </div>
+                  </div>
+                  <div class="shock-corner">
+                    <div class="sc-label">LR</div>
+                    <div class="sc-fields">
+                      <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-lr-lsc" value="4" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-lr-hsc" value="4" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-lr-lsr" value="5" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-lr-hsr" value="5" step="1" min="1" max="12"/></div>
+                    </div>
+                  </div>
+                  <div class="shock-corner">
+                    <div class="sc-label">RR</div>
+                    <div class="sc-fields">
+                      <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-rr-lsc" value="5" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-rr-hsc" value="5" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-rr-lsr" value="6" step="1" min="1" max="12"/></div>
+                      <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-rr-hsr" value="6" step="1" min="1" max="12"/></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mf-actions">
+                <input type="text" id="setup-name-input" placeholder="Nome do setup (ex: Daytona_Q1)" class="setup-name-field"/>
+                <button class="btn-primary" onclick="analyzeManualSetup()">🔍 Analisar Setup</button>
+                <button class="btn-secondary" onclick="saveCurrentSetup()">💾 Salvar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Templates tab -->
+          <div class="itab-content" id="tab-templates">
+            <div class="templates-list">
+              <div class="template-item" onclick="loadTemplate('superspeedway')">
+                <div class="ti-icon">🏎️</div>
+                <div class="ti-content">
+                  <div class="ti-name">Superspeedway Base</div>
+                  <div class="ti-desc">Daytona, Talladega – Alta velocidade, foco aerodinâmico</div>
+                </div>
+                <div class="ti-tag super">SUPER</div>
+              </div>
+              <div class="template-item" onclick="loadTemplate('intermediate')">
+                <div class="ti-icon">🏎️</div>
+                <div class="ti-content">
+                  <div class="ti-name">Intermediate Base</div>
+                  <div class="ti-desc">Charlotte, Las Vegas, Michigan – 1.5mi tracks</div>
+                </div>
+                <div class="ti-tag inter">INTER</div>
+              </div>
+              <div class="template-item" onclick="loadTemplate('shorttrack')">
+                <div class="ti-icon">🏎️</div>
+                <div class="ti-content">
+                  <div class="ti-name">Short Track Base</div>
+                  <div class="ti-desc">Bristol, Martinsville – Alta rotação, grip mecânico</div>
+                </div>
+                <div class="ti-tag short">SHORT</div>
+              </div>
+              <div class="template-item" onclick="loadTemplate('flat')">
+                <div class="ti-icon">🏎️</div>
+                <div class="ti-content">
+                  <div class="ti-name">Flat Track Base</div>
+                  <div class="ti-desc">Pocono, Iowa – Pouco banking, estabilidade lateral</div>
+                </div>
+                <div class="ti-tag flat">FLAT</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Analysis -->
+        <div class="setup-analysis-panel" id="setup-analysis-panel">
+          <div class="panel-header">📊 Análise do Setup <span class="analysis-badge" id="analysis-badge" style="display:none">ANALISADO</span></div>
+          <div id="setup-analysis-empty" class="analysis-empty">
+            <div class="ae-icon">🔧</div>
+            <div class="ae-text">Carregue um setup para ver a análise completa aqui</div>
+            <div class="ae-sub">O sistema irá identificar tendências de comportamento e sugerir melhorias</div>
+          </div>
+          <div id="setup-analysis-result" style="display:none">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAGE: DIAGNOSIS ===== -->
+    <section class="page" id="page-diagnosis">
+      <div class="page-title-bar">
+        <h2>🎯 Matriz de Diagnóstico de Handling</h2>
+        <p>Selecione os problemas ou descreva o comportamento do carro para receber ajustes específicos</p>
+      </div>
+
+      <div class="diagnosis-layout">
+        <!-- Left: Problem selector -->
+        <div class="diag-selector-panel">
+          <div class="panel-header">Selecione os Problemas</div>
+
+          <div class="diag-phase-selector">
+            <div class="phase-group">
+              <div class="phase-title loose">🔴 LOOSE (Traseira Solta)</div>
+              <div class="diag-buttons">
+                <button class="diag-btn loose-btn" data-issue="loose-entry" onclick="toggleIssue(this)">
+                  <span class="db-icon">↙️</span>Loose Entry<br><small>Entrada de curva</small>
+                </button>
+                <button class="diag-btn loose-btn" data-issue="loose-center" onclick="toggleIssue(this)">
+                  <span class="db-icon">⬅️</span>Loose Center<br><small>Meio da curva</small>
+                </button>
+                <button class="diag-btn loose-btn" data-issue="loose-exit" onclick="toggleIssue(this)">
+                  <span class="db-icon">↖️</span>Loose Exit<br><small>Saída da curva</small>
+                </button>
+              </div>
+            </div>
+            <div class="phase-group">
+              <div class="phase-title tight">🔵 TIGHT (Empurra)</div>
+              <div class="diag-buttons">
+                <button class="diag-btn tight-btn" data-issue="tight-entry" onclick="toggleIssue(this)">
+                  <span class="db-icon">↘️</span>Tight Entry<br><small>Entrada de curva</small>
+                </button>
+                <button class="diag-btn tight-btn" data-issue="tight-center" onclick="toggleIssue(this)">
+                  <span class="db-icon">➡️</span>Tight Center<br><small>Meio da curva</small>
+                </button>
+                <button class="diag-btn tight-btn" data-issue="tight-exit" onclick="toggleIssue(this)">
+                  <span class="db-icon">↗️</span>Tight Exit<br><small>Saída da curva</small>
+                </button>
+              </div>
+            </div>
+            <div class="phase-group">
+              <div class="phase-title other">⚡ OUTROS PROBLEMAS</div>
+              <div class="diag-buttons">
+                <button class="diag-btn other-btn" data-issue="tire-wear" onclick="toggleIssue(this)">
+                  <span class="db-icon">🛞</span>Desgaste excessivo<br><small>Pneus quentes</small>
+                </button>
+                <button class="diag-btn other-btn" data-issue="no-rotation" onclick="toggleIssue(this)">
+                  <span class="db-icon">🔄</span>Sem rotação<br><small>Dificuldade de girar</small>
+                </button>
+                <button class="diag-btn other-btn" data-issue="high-line" onclick="toggleIssue(this)">
+                  <span class="db-icon">📈</span>Dificuldade linha alta<br><small>Fora do groove</small>
+                </button>
+                <button class="diag-btn other-btn" data-issue="thermal-fade" onclick="toggleIssue(this)">
+                  <span class="db-icon">🌡️</span>Tight após stints<br><small>Fadiga térmica</small>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Natural language input -->
+          <div class="nl-input-section">
+            <div class="nl-header">💬 Ou descreva em linguagem natural:</div>
+            <textarea id="nl-feedback" rows="4" placeholder="Ex: 'O carro fica tight depois de 20 voltas, especialmente na entrada da curva 1. Na saída fica ok mas no meio perde muita velocidade...'" ></textarea>
+            <button class="btn-primary full-width" onclick="analyzeNaturalLanguage()">🧠 Analisar Feedback</button>
+          </div>
+
+          <div class="diag-actions">
+            <button class="btn-primary full-width" onclick="runDiagnosis()">🔍 Gerar Diagnóstico Completo</button>
+            <button class="btn-ghost full-width" onclick="clearDiagnosis()">🗑️ Limpar Seleção</button>
+          </div>
+        </div>
+
+        <!-- Right: Results -->
+        <div class="diag-results-panel">
+          <div class="panel-header">📋 Resultados do Diagnóstico</div>
+          <div id="diag-empty" class="analysis-empty">
+            <div class="ae-icon">🎯</div>
+            <div class="ae-text">Selecione os problemas e clique em "Gerar Diagnóstico"</div>
+          </div>
+          <div id="diag-results" style="display:none">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAGE: TRACKS ===== -->
+    <section class="page" id="page-tracks">
+      <div class="page-title-bar">
+        <h2>🏟️ Banco de Pistas – Oval iRacing</h2>
+        <p>Selecione uma pista para ver características detalhadas e recomendações de setup</p>
+      </div>
+
+      <div class="tracks-layout">
+        <!-- Left: Track list -->
+        <div class="tracks-list-panel">
+          <div class="panel-header">Pistas Disponíveis</div>
+          <div class="track-filters">
+            <button class="tf-btn active" data-filter="all">Todas</button>
+            <button class="tf-btn" data-filter="superspeedway">Super</button>
+            <button class="tf-btn" data-filter="intermediate">Intermediate</button>
+            <button class="tf-btn" data-filter="short">Short Track</button>
+            <button class="tf-btn" data-filter="flat">Flat/Misc</button>
+          </div>
+          <div class="tracks-list" id="tracks-list">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+
+        <!-- Right: Track detail -->
+        <div class="track-detail-panel" id="track-detail-panel">
+          <div id="track-empty" class="analysis-empty">
+            <div class="ae-icon">🏟️</div>
+            <div class="ae-text">Selecione uma pista para ver detalhes</div>
+          </div>
+          <div id="track-detail" style="display:none">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAGE: DYNAMICS ===== -->
+    <section class="page" id="page-dynamics">
+      <div class="page-title-bar">
+        <h2>📐 Dinâmica Veicular – Visualização Interativa</h2>
+        <p>Entenda como cada ajuste influencia o comportamento do carro</p>
+      </div>
+
+      <div class="dynamics-tabs">
+        <button class="dyn-tab active" data-dyntab="weight">⚖️ Transferência de Peso</button>
+        <button class="dyn-tab" data-dyntab="springs">🌀 Molas & ARB</button>
+        <button class="dyn-tab" data-dyntab="shocks">🔩 Amortecedores</button>
+        <button class="dyn-tab" data-dyntab="tires">🛞 Pneus & Geometria</button>
+        <button class="dyn-tab" data-dyntab="simulator">🎮 Simulador</button>
+      </div>
+
+      <div class="dynamics-content" id="dynamics-content">
+        <!-- Filled by JS -->
+      </div>
+    </section>
+
+    <!-- ===== PAGE: HISTORY ===== -->
+    <section class="page" id="page-history">
+      <div class="page-title-bar">
+        <h2>📁 Histórico de Setups</h2>
+        <p>Compare versões e evolua progressivamente seu setup</p>
+      </div>
+
+      <div class="history-layout">
+        <div class="history-controls">
+          <button class="btn-secondary" onclick="clearHistory()">🗑️ Limpar Histórico</button>
+          <button class="btn-secondary" onclick="exportHistory()">📤 Exportar JSON</button>
+        </div>
+        <div id="history-empty" class="analysis-empty" style="margin-top:2rem">
+          <div class="ae-icon">📁</div>
+          <div class="ae-text">Nenhum setup salvo ainda</div>
+          <div class="ae-sub">Analise e salve setups na aba "Setup Analyzer"</div>
+        </div>
+        <div id="history-list" style="display:none">
+          <!-- Filled by JS -->
+        </div>
+        <div id="history-comparison" style="display:none">
+          <!-- Comparison view -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAGE: ENGINEER ===== -->
+    <section class="page" id="page-engineer">
+      <div class="page-title-bar">
+        <h2>🤖 Engenheiro Virtual IA</h2>
+        <p>Chat interativo com engenheiro especializado em NASCAR Next Gen</p>
+      </div>
+
+      <div class="engineer-layout">
+        <div class="engineer-chat-panel">
+          <div class="chat-messages" id="chat-messages">
+            <!-- Filled by JS -->
+          </div>
+          <div class="chat-input-bar">
+            <div class="chat-quick-btns">
+              <button onclick="sendQuickMessage('Estou com loose na entrada da curva')">Loose entrada</button>
+              <button onclick="sendQuickMessage('Carro tight no centro da curva')">Tight centro</button>
+              <button onclick="sendQuickMessage('Desgaste excessivo no pneu traseiro direito')">Desgaste RR</button>
+              <button onclick="sendQuickMessage('Como otimizar para qualificação?')">Setup quali</button>
+              <button onclick="sendQuickMessage('O carro fica tight após 15 voltas')">Fadiga térmica</button>
+            </div>
+            <div class="chat-input-row">
+              <textarea id="chat-input" rows="2" placeholder="Descreva o comportamento do carro ou faça uma pergunta de engenharia..."></textarea>
+              <button class="chat-send-btn" onclick="sendChatMessage()">📤</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="engineer-sidebar">
+          <div class="panel-header">🔧 Contexto Atual</div>
+          <div class="eng-context">
+            <div class="ec-item">
+              <div class="ec-label">Pista</div>
+              <div class="ec-value" id="eng-track">—</div>
+            </div>
+            <div class="ec-item">
+              <div class="ec-label">Setup</div>
+              <div class="ec-value" id="eng-setup">—</div>
+            </div>
+            <div class="ec-item">
+              <div class="ec-label">Tipo</div>
+              <div class="ec-value" id="eng-type">—</div>
+            </div>
+          </div>
+          <div class="panel-header" style="margin-top:1rem">📚 Referências Rápidas</div>
+          <div class="quick-refs">
+            <div class="qr-item" onclick="insertRef('springs')">🌀 Sinopse das Molas</div>
+            <div class="qr-item" onclick="insertRef('shocks')">🔩 Sinopse dos Choques</div>
+            <div class="qr-item" onclick="insertRef('tires')">🛞 Guia de Pressões</div>
+            <div class="qr-item" onclick="insertRef('arb')">🔗 ARB & Roll</div>
+            <div class="qr-item" onclick="insertRef('geometry')">📐 Geometria</div>
+            <div class="qr-item" onclick="insertRef('pitstop')">🔄 Ajustes de Pit</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script src="data-tracks.js"></script>
+  <script src="data-engineer.js"></script>
+  <script src="dynamics.js"></script>
+</body>
+</html>
