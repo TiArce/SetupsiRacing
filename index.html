@@ -29,6 +29,7 @@
       <button class="nav-btn" data-page="dynamics">📐 Dinâmica</button>
       <button class="nav-btn" data-page="history">📁 Histórico</button>
       <button class="nav-btn" data-page="engineer">🤖 Engenheiro IA</button>
+      <button class="nav-btn nav-btn-highlight" data-page="advsim">🎮 Sim. Avançado</button>
     </nav>
     <div class="header-right">
       <div class="status-pill" id="session-status">● Sessão Ativa</div>
@@ -131,6 +132,11 @@
           <div class="qa-icon">🤖</div>
           <div class="qa-title">Engenheiro Virtual IA</div>
           <div class="qa-desc">Chat interativo com engenheiro especializado</div>
+        </div>
+        <div class="qa-card" onclick="navigateTo('advsim')" style="border-color:rgba(232,160,0,0.4);background:linear-gradient(135deg,rgba(232,160,0,0.08),rgba(232,160,0,0.02))">
+          <div class="qa-icon">🎮</div>
+          <div class="qa-title" style="color:var(--gold)">Simulador Avançado <span style="font-size:0.65rem;background:var(--gold);color:var(--bg-primary);padding:1px 5px;border-radius:3px;font-family:'Orbitron',sans-serif;margin-left:4px">NOVO</span></div>
+          <div class="qa-desc">Todos os parâmetros do carro – veja o efeito em tempo real</div>
         </div>
       </div>
 
@@ -729,11 +735,49 @@
         </div>
       </div>
     </section>
+    <!-- ===== PAGE: ADVANCED SIMULATOR ===== -->
+    <section class="page" id="page-advsim">
+      <div class="page-title-bar advsim-title-bar">
+        <div class="advsim-title-content">
+          <h2>🎮 Simulador Avançado de Setup – NASCAR Next Gen</h2>
+          <p>Ajuste <strong>todos os parâmetros</strong> do carro e veja em tempo real o efeito em cada fase da curva</p>
+        </div>
+        <div class="advsim-title-actions">
+          <button class="btn-ghost" onclick="resetAdvSim()" style="font-size:0.8rem">↺ Reset Padrão</button>
+          <button class="btn-secondary" onclick="loadCurrentSetupIntoSim()" style="font-size:0.8rem">📥 Importar Setup</button>
+          <button class="btn-primary" onclick="exportAdvSimSetup()" style="font-size:0.8rem">📤 Exportar</button>
+        </div>
+      </div>
+
+      <!-- Tab selector for groups/layout -->
+      <div class="advsim-group-tabs" id="advsim-group-tabs">
+        <button class="agt-btn active" data-grptab="all">📋 Todos</button>
+        <button class="agt-btn" data-grptab="tires">🛞 Pneus</button>
+        <button class="agt-btn" data-grptab="springs">🌀 Molas</button>
+        <button class="agt-btn" data-grptab="shocks">🔩 Choques</button>
+        <button class="agt-btn" data-grptab="arb">🔗 ARB</button>
+        <button class="agt-btn" data-grptab="geometry">📐 Geometria</button>
+        <button class="agt-btn" data-grptab="weight">⚖️ Peso</button>
+        <button class="agt-btn" data-grptab="aero">🌬️ Aero/RH</button>
+        <button class="agt-btn" data-grptab="drivetrain">⚙️ Diferencial</button>
+        <button class="agt-btn" data-grptab="pitstop">🔄 Pit Road</button>
+      </div>
+
+      <!-- Main simulator root -->
+      <div id="adv-sim-root" class="advsim-root">
+        <div class="advsim-loading">
+          <div class="advsim-loading-icon">⚙️</div>
+          <div>Carregando simulador avançado...</div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <script src="app.js"></script>
   <script src="data-tracks.js"></script>
   <script src="data-engineer.js"></script>
   <script src="dynamics.js"></script>
+  <script src="simulator-advanced.js"></script>
 </body>
 </html>

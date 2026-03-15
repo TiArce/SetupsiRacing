@@ -13,6 +13,8 @@ const AppState = {
   diagnosisCount: 0,
   chatHistory: []
 };
+// Make globally accessible for simulator-advanced.js
+window.AppState = AppState;
 
 // ─── INIT ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -40,7 +42,17 @@ window.navigateTo = function(page) {
   AppState.currentPage = page;
   if (page === 'dynamics') refreshDynamicsContent();
   if (page === 'engineer') updateEngineerContext();
+  if (page === 'advsim')   initAdvSimPage();
 };
+
+// ─── ADVANCED SIMULATOR PAGE INIT ────────────────────────────────
+let _advSimInitialized = false;
+function initAdvSimPage() {
+  if (typeof window.renderAdvancedSimulator !== 'function') return;
+  // Render every time to ensure fresh state (cheap op)
+  window.renderAdvancedSimulator();
+  _advSimInitialized = true;
+}
 
 // ─── TAB SWITCHING ────────────────────────────────────────────────
 function setupTabSwitching() {
