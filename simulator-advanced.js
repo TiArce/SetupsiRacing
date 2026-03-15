@@ -1022,18 +1022,27 @@ window.renderAdvancedSimulator = function() {
     </div>
   </div>`;
 
-  // Wire group tab filter
+  // Wire group tab filter (they exist in the HTML outside the container)
   document.querySelectorAll('.agt-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    // Remove old listeners by cloning
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    newBtn.addEventListener('click', () => {
       document.querySelectorAll('.agt-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      filterAdvGroups(btn.dataset.grptab);
+      newBtn.classList.add('active');
+      filterAdvGroups(newBtn.dataset.grptab);
     });
   });
 
-  // Initial render
-  updateAdvSim(null);
-  filterAdvGroups('all');
+  // Initial render – use requestAnimationFrame to ensure DOM is painted
+  requestAnimationFrame(function() {
+    try {
+      updateAdvSim(null);
+      filterAdvGroups('all');
+    } catch(e) {
+      console.error('updateAdvSim error:', e);
+    }
+  });
 };
 
 // ─── RENDER PARAM SLIDER ─────────────────────────────────────────

@@ -46,12 +46,27 @@ window.navigateTo = function(page) {
 };
 
 // ─── ADVANCED SIMULATOR PAGE INIT ────────────────────────────────
-let _advSimInitialized = false;
 function initAdvSimPage() {
-  if (typeof window.renderAdvancedSimulator !== 'function') return;
-  // Render every time to ensure fresh state (cheap op)
-  window.renderAdvancedSimulator();
-  _advSimInitialized = true;
+  // Use a small timeout to ensure the page's display:block is applied first
+  // (navigateTo toggles .active which sets display:block via CSS)
+  setTimeout(function() {
+    try {
+      if (typeof window.renderAdvancedSimulator === 'function') {
+        window.renderAdvancedSimulator();
+      } else {
+        // Script not loaded yet - retry once more
+        setTimeout(function() {
+          if (typeof window.renderAdvancedSimulator === 'function') {
+            window.renderAdvancedSimulator();
+          }
+        }, 300);
+      }
+    } catch(e) {
+      console.error('Advanced Simulator init error:', e);
+      const root = document.getElementById('adv-sim-root');
+      if (root) root.innerHTML = '<div style="color:var(--loose);padding:2rem;text-align:center">Erro ao carregar simulador: ' + e.message + '</div>';
+    }
+  }, 50);
 }
 
 // ─── TAB SWITCHING ────────────────────────────────────────────────
