@@ -130,11 +130,13 @@ window.parseSetupText = function() {
     // Try to analyze whatever was pasted
   }
 
+  setup.source = 'iracing';
   AppState.currentSetup = setup;
   AppState.currentSetup.name = 'Setup Importado';
   AppState.currentSetup.timestamp = new Date().toISOString();
   renderSetupAnalysis(setup);
   updateDashboard();
+  updateSetupStatusUI();
 };
 
 function parseIRacingSetup(text) {
@@ -207,6 +209,466 @@ function parseIRacingSetup(text) {
   return setup;
 }
 
+// ─── KAPPS FORMAT PARSER ─────────────────────────────────────────
+// The Kapps app uses a hierarchical indented format:
+//   22:07:21              <- first line = timestamp ID (HH:MM:SS)
+//   Tires                 <- section (no brackets)
+//   LeftFront             <- subsection / corner
+//   ColdPressure   138"   <- field TAB value (TAB or spaces, value may have unit suffix)
+//   ...
+// Sections: Tires, Chassis, Front, Rear, LeftFront, RightFront, LeftRear, RightRear,
+//           Crossweight, Aero, Brakes, Geometry, etc.
+
+window.clearKappsInput = function() {
+  document.getElementById('kapps-input').value = '';
+  document.getElementById('kapps-setup-name').value = '';
+  const bar = document.getElementById('kapps-status-bar');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+};
+
+window.parseKappsSetup = function() {
+  const text = document.getElementById('kapps-input').value.trim();
+  if (!text) {
+    showNotification('Cole o conteúdo do Kapps primeiro.', 'error');
+    return;
+  }
+
+  const setup = parseKappsText(text);
+  if (!setup) {
+    showNotification('Formato Kapps não reconhecido. Verifique o conteúdo.', 'warn');
+    return;
+  }
+
+  // Allow user to override the auto-name
+  const userNameInput = document.getElementById('kapps-setup-name');
+  const userName = userNameInput ? userNameInput.value.trim() : '';
+  if (userName) setup.name = userName;
+
+  AppState.currentSetup = setup;
+  AppState.currentSetup.isActive = false; // not yet set active
+  renderSetupAnalysis(setup);
+  updateDashboard();
+  updateSetupStatusUI();
+
+  // Show status bar
+  const bar = document.getElementById('kapps-status-bar');
+  if (bar) {
+    const fieldsCount = Object.keys(setup).filter(k => !['raw','name','timestamp','source','kappsId','isActive'].includes(k)).length;
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+      <span class="ksb-ok">✅ Setup Kapps importado</span>
+      <span class="ksb-id">ID: ${setup.kappsId || '—'}</span>
+      <span class="ksb-fields">${fieldsCount} parâmetros lidos</span>
+    `;
+  }
+
+  showNotification(`Setup Kapps "${setup.name}" importado com sucesso!`, 'success');
+};
+
+function parseKappsValue(raw) {
+  // Remove unit suffixes: 138" → 138, 50.1% → 50.1, 97% → 97, 152" → 152
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw).trim();
+  if (s === '' || s === '-' || s === 'N/A' || s === '--') return null;
+  // Strip trailing " % degrees etc.
+  const cleaned = s.replace(/["'°%#\s]+$/, '').replace(/,/g, '.').trim();
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? cleaned : num;
+}
+
+function parseKappsText(text) {
+  const lines = text.split('\n');
+  if (!lines.length) return null;
+
+  const setup = { raw: text, source: 'kapps' };
+
+  // First non-empty line = timestamp ID
+  let idLine = '';
+  let startIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t) { idLine = t; startIdx = i + 1; break; }
+  }
+
+  // Check if idLine looks like HH:MM:SS
+  const timeRe = /^\d{1,2}:\d{2}(:\d{2})?$/;
+  if (timeRe.test(idLine)) {
+    setup.kappsId = idLine;
+    setup.name = 'Kapps ' + idLine;
+  } else {
+    // Not a time ID – try to parse anyway
+    setup.kappsId = idLine;
+    setup.name = 'Kapps Setup';
+    startIdx = 0; // reparse from beginning
+  }
+
+  setup.timestamp = new Date().toISOString();
+
+  let section = '';    // Top-level section: tires, chassis, front, rear, aero, brakes, geometry
+  let corner = '';     // Corner: leftfront, rightfront, leftrear, rightrear
+  let subSection = ''; // Sub-section within chassis, etc.
+
+  const cornerMap = {
+    'leftfront': 'lf', 'rightfront': 'rf', 'leftrear': 'lr', 'rightrear': 'rr',
+    'lf': 'lf', 'rf': 'rf', 'lr': 'lr', 'rr': 'rr',
+    'front left': 'lf', 'front right': 'rf', 'rear left': 'lr', 'rear right': 'rr'
+  };
+
+  // Parse tire kPa → PSI conversion: 138 kPa ≈ 20.0 PSI (Kapps uses kPa? or raw PSI?)
+  // The example shows 138" – in iRacing, tire pressures in setup files are in kPa
+  // 138 kPa = 20.0 PSI. But wait – could be 138 = PSI*100? Let's check: 138/100 = 1.38? No.
+  // Actually iRacing .sto files store pressure as kPa integer: 138 kPa ≈ 20.0 PSI
+  // Kapps likely shows the same raw value. We'll store raw and also convert.
+  // Common range: 130-200 kPa = 18.8-29.0 PSI
+  const kpaToPsi = (v) => v > 50 ? Math.round((v / 6.89476) * 10) / 10 : v;
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const raw = lines[i];
+    const line = raw.trimEnd();
+    if (!line.trim()) continue;
+
+    // Determine indentation level
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+
+    // --- Section headers (indent 0 or 1) ---
+    if (indent <= 1 && trimmed && !/\t/.test(raw.replace(/^\s*/, ''))) {
+      // Could be section header or corner header
+      const noTab = !trimmed.includes('\t');
+
+      if (noTab) {
+        // Section or corner identifier
+        if (lower === 'tires' || lower === 'tire') {
+          section = 'tires'; corner = ''; subSection = '';
+        } else if (lower === 'chassis') {
+          section = 'chassis'; corner = ''; subSection = '';
+        } else if (lower === 'front' && section !== 'tires') {
+          section = 'chassis'; subSection = 'front'; corner = '';
+        } else if (lower === 'rear' && section !== 'tires') {
+          section = 'chassis'; subSection = 'rear'; corner = '';
+        } else if (lower === 'aero' || lower === 'aerodynamics') {
+          section = 'aero'; corner = ''; subSection = '';
+        } else if (lower === 'brakes' || lower === 'brake') {
+          section = 'brakes'; corner = ''; subSection = '';
+        } else if (lower === 'geometry' || lower === 'suspension') {
+          section = 'geometry'; corner = ''; subSection = '';
+        } else if (lower === 'drivetrain' || lower === 'differential') {
+          section = 'drivetrain'; corner = ''; subSection = '';
+        } else if (lower === 'pitroad' || lower === 'pit road' || lower === 'pit') {
+          section = 'pitroad'; corner = ''; subSection = '';
+        } else if (lower === 'springs') {
+          section = 'springs'; corner = ''; subSection = '';
+        } else if (lower === 'shocks' || lower === 'dampers') {
+          section = 'shocks'; corner = ''; subSection = '';
+        } else if (lower === 'arb' || lower === 'antirollbar' || lower === 'anti-roll') {
+          section = 'arb'; corner = ''; subSection = '';
+        } else if (lower in cornerMap) {
+          corner = cornerMap[lower];
+        } else if (lower === 'leftfront' || lower === 'left front') {
+          corner = 'lf';
+        } else if (lower === 'rightfront' || lower === 'right front') {
+          corner = 'rf';
+        } else if (lower === 'leftrear' || lower === 'left rear') {
+          corner = 'lr';
+        } else if (lower === 'rightrear' || lower === 'right rear') {
+          corner = 'rr';
+        } else {
+          // Unknown single-word line at low indent = new section/subsection
+          subSection = lower;
+        }
+        continue;
+      }
+    }
+
+    // --- Corner headers at any indent (no tab, looks like LeftFront etc) ---
+    const cornerK = cornerMap[lower];
+    if (cornerK && !trimmed.includes('\t') && !trimmed.includes('=')) {
+      corner = cornerK;
+      continue;
+    }
+
+    // --- Field = value line (contains TAB or multiple spaces between field and value) ---
+    // Kapps format: "FieldName\tValue" or "FieldName   Value"
+    let fieldName = '', fieldValue = '';
+
+    if (trimmed.includes('\t')) {
+      const tabIdx = trimmed.indexOf('\t');
+      fieldName = trimmed.substring(0, tabIdx).trim();
+      fieldValue = trimmed.substring(tabIdx + 1).trim();
+    } else if (trimmed.includes('=')) {
+      const eqIdx = trimmed.indexOf('=');
+      fieldName = trimmed.substring(0, eqIdx).trim();
+      fieldValue = trimmed.substring(eqIdx + 1).trim();
+    } else {
+      // Multi-space separation (3+ spaces)
+      const multiSpaceMatch = trimmed.match(/^(\S.*?)\s{3,}(.+)$/);
+      if (multiSpaceMatch) {
+        fieldName = multiSpaceMatch[1].trim();
+        fieldValue = multiSpaceMatch[2].trim();
+      } else {
+        // Single value line – could be subsection header
+        if (trimmed in cornerMap) { corner = cornerMap[trimmed.toLowerCase()]; }
+        continue;
+      }
+    }
+
+    const fLower = fieldName.toLowerCase().replace(/\s+/g, '');
+    const val = parseKappsValue(fieldValue);
+    if (val === null && fieldValue !== '0') continue;
+
+    const pfx = corner || ''; // e.g. 'lf', 'rf', etc.
+
+    // ─── TIRES ───
+    if (section === 'tires' && pfx) {
+      if (fLower === 'coldpressure' || fLower === 'cold' || fLower === 'coldpsi') {
+        const psi = kpaToPsi(val);
+        setup[pfx + '_psi'] = psi;
+        setup[pfx + '_cold_kpa'] = val > 50 ? val : null;
+      } else if (fLower === 'hotpressure' || fLower === 'hot' || fLower === 'hotpsi') {
+        setup[pfx + '_hot_psi'] = kpaToPsi(val);
+        setup[pfx + '_hot_kpa'] = val > 50 ? val : null;
+      } else if (fLower === 'lasthotpressure' || fLower === 'lasthot') {
+        setup[pfx + '_lasthot_psi'] = kpaToPsi(val);
+      } else if (fLower === 'tempoutside' || fLower === 'tempout' || fLower === 'outsidetemp') {
+        setup[pfx + '_temp_out'] = val;
+      } else if (fLower === 'tempmiddle' || fLower === 'tempmid' || fLower === 'middletemp') {
+        setup[pfx + '_temp_mid'] = val;
+      } else if (fLower === 'tempinside' || fLower === 'tempin' || fLower === 'insidetemp') {
+        setup[pfx + '_temp_in'] = val;
+      } else if (fLower === 'treadoutside' || fLower === 'treadout') {
+        setup[pfx + '_tread_out'] = typeof val === 'string' ? parseFloat(val) : val;
+      } else if (fLower === 'treadmiddle' || fLower === 'treadmid') {
+        setup[pfx + '_tread_mid'] = typeof val === 'string' ? parseFloat(val) : val;
+      } else if (fLower === 'treadinside' || fLower === 'treadin') {
+        setup[pfx + '_tread_in'] = typeof val === 'string' ? parseFloat(val) : val;
+      } else if (fLower === 'wear' || fLower === 'treadwear') {
+        setup[pfx + '_tread_avg'] = typeof val === 'string' ? parseFloat(val) : val;
+      }
+    }
+
+    // ─── SPRINGS ───
+    if (section === 'springs' || (section === 'chassis' && fLower.includes('spring'))) {
+      const sp = pfx || (fLower.includes('lf') || fLower.includes('leftfront') ? 'lf' :
+                         fLower.includes('rf') || fLower.includes('rightfront') ? 'rf' :
+                         fLower.includes('lr') || fLower.includes('leftrear') ? 'lr' :
+                         fLower.includes('rr') || fLower.includes('rightrear') ? 'rr' : '');
+      if (sp && (fLower === 'springrate' || fLower === 'spring' || fLower.includes('spring'))) {
+        setup[sp + '_spring'] = val;
+      }
+    }
+    if (pfx && (fLower === 'springrate' || fLower === 'spring' || fLower === 'springratein' || fLower === 'rate')) {
+      setup[pfx + '_spring'] = val;
+    }
+
+    // ─── RIDE HEIGHTS ───
+    if (pfx && (fLower === 'rideheight' || fLower === 'height' || fLower === 'ride')) {
+      setup[pfx + '_rh'] = val;
+    }
+
+    // ─── SHOCKS ───
+    if (pfx && (fLower === 'lowspeedcompression' || fLower === 'lscomp' || fLower === 'compressionlow' || fLower === 'lowcomp')) {
+      setup[pfx + '_lsc'] = val;
+    }
+    if (pfx && (fLower === 'highspeedcompression' || fLower === 'hscomp' || fLower === 'compressionhigh' || fLower === 'highcomp')) {
+      setup[pfx + '_hsc'] = val;
+    }
+    if (pfx && (fLower === 'lowspeedrebound' || fLower === 'lsreb' || fLower === 'reboundlow' || fLower === 'lowreb' || fLower === 'lowrebound')) {
+      setup[pfx + '_lsr'] = val;
+    }
+    if (pfx && (fLower === 'highspeedrebound' || fLower === 'hsreb' || fLower === 'reboundhigh' || fLower === 'highreb' || fLower === 'highrebound')) {
+      setup[pfx + '_hsr'] = val;
+    }
+    // Generic compression/rebound by corner
+    if (pfx && fLower === 'compression') setup[pfx + '_lsc'] = val;
+    if (pfx && fLower === 'rebound') setup[pfx + '_lsr'] = val;
+
+    // ─── CAMBER / CASTER / TOE ───
+    if (pfx && fLower === 'camber') setup[pfx + '_camber'] = val;
+    if (pfx && fLower === 'caster') setup[pfx + '_caster'] = val;
+    if (pfx && fLower === 'toe') setup[pfx + '_toe'] = val;
+
+    // ─── CHASSIS WEIGHT ───
+    if (section === 'chassis' || section === '') {
+      if (fLower === 'crossweight' || fLower === 'crossweightpct' || fLower === 'cross') {
+        const cw = typeof val === 'string' ? parseFloat(val) : val;
+        setup.cross_weight = cw;
+      } else if (fLower === 'frontweight' || fLower === 'frontweightpct' || fLower === 'noseweight' || fLower === 'nose') {
+        // Could be raw weight (lbs) or percentage
+        if (typeof val === 'number' && val > 100) {
+          setup.front_weight_lbs = val;
+        } else {
+          setup.nose_weight = val;
+        }
+      } else if (fLower === 'rearweight' || fLower === 'rear') {
+        if (typeof val === 'number' && val > 100) setup.rear_weight_lbs = val;
+      } else if (fLower === 'leftweight' || fLower === 'left') {
+        if (typeof val === 'number' && val > 100) setup.left_weight_lbs = val;
+      } else if (fLower === 'rightweight' || fLower === 'right') {
+        if (typeof val === 'number' && val > 100) setup.right_weight_lbs = val;
+      } else if (fLower === 'lfweight' || fLower === 'leftfrontweight') {
+        setup.lf_corner_weight = val;
+      } else if (fLower === 'rfweight' || fLower === 'rightfrontweight') {
+        setup.rf_corner_weight = val;
+      } else if (fLower === 'lrweight' || fLower === 'leftrearweight') {
+        setup.lr_corner_weight = val;
+      } else if (fLower === 'rrweight' || fLower === 'rightrearweight') {
+        setup.rr_corner_weight = val;
+      } else if (fLower === 'totalweight' || fLower === 'total') {
+        setup.total_weight = val;
+      }
+    }
+
+    // ─── BRAKES ───
+    if (section === 'brakes' || fLower.includes('brake')) {
+      if (fLower === 'brakebias' || fLower === 'frontbrakebiaspct' || fLower === 'bias') {
+        setup.brake_bias = val;
+      } else if (fLower === 'frontmastercylinder' || fLower === 'frontmc' || fLower === 'mastercylinderleft') {
+        setup.f_master_cyl = val;
+      } else if (fLower === 'rearmastercylinder' || fLower === 'rearmc' || fLower === 'mastercylinderright') {
+        setup.r_master_cyl = val;
+      }
+    }
+
+    // ─── ARB ───
+    if (section === 'arb' || fLower.includes('arb') || fLower.includes('antiroll')) {
+      const isRear = fLower.includes('rear') || subSection === 'rear' || (pfx === 'lr' || pfx === 'rr');
+      const isFront = fLower.includes('front') || subSection === 'front' || (pfx === 'lf' || pfx === 'rf');
+      const side = isRear ? 'r' : isFront ? 'f' : (subSection === 'rear' ? 'r' : 'f');
+      if (fLower === 'diameter' || fLower === 'arb' || fLower.includes('diam')) {
+        setup[side + '_arb_diam'] = fieldValue.trim(); // Keep as string for display
+      } else if (fLower === 'arm' || fLower === 'arbarm' || fLower.includes('arm')) {
+        setup[side + '_arb_arm'] = val;
+      } else if (fLower === 'preload' || fLower === 'arbpreload') {
+        setup[side + '_arb_preload'] = val;
+      }
+    }
+
+    // ─── AERO ───
+    if (section === 'aero') {
+      if (fLower === 'rearspoiler' || fLower === 'spoiler' || fLower === 'rearspoilerangle') {
+        setup.rear_spoiler = val;
+      } else if (fLower === 'frontsplitter' || fLower === 'splitter') {
+        setup.front_splitter = val;
+      } else if (fLower === 'trackbar' || fLower === 'trackbarheight') {
+        setup.track_bar = val;
+      }
+    }
+
+    // ─── DRIVETRAIN ───
+    if (section === 'drivetrain') {
+      if (fLower === 'finalratio' || fLower === 'finaldrive' || fLower === 'ratio') {
+        setup.final_drive = val;
+      } else if (fLower === 'diffpreload' || fLower === 'preload' || fLower === 'differential') {
+        setup.diff_preload = val;
+      }
+    }
+
+    // ─── PIT ROAD / PERCH ───
+    if (section === 'pitroad' && pfx) {
+      if (fLower === 'perch' || fLower === 'springperch' || fLower === 'perchoffset') {
+        setup[pfx + '_perch'] = val;
+      }
+    }
+
+    // ─── GEOMETRY (Generic) ───
+    if (section === 'geometry') {
+      if (pfx) {
+        if (fLower === 'camber') setup[pfx + '_camber'] = val;
+        if (fLower === 'caster') setup[pfx + '_caster'] = val;
+        if (fLower === 'toe') setup[pfx + '_toe'] = val;
+      }
+      if (fLower === 'pinionangle' || fLower === 'pinion') setup.pinion_angle = val;
+      if (fLower === 'steeroffset' || fLower === 'steer') setup.steer_offset = val;
+    }
+  }
+
+  // Derive nose weight from front/total if not yet parsed
+  if (!setup.nose_weight && setup.front_weight_lbs && setup.total_weight) {
+    setup.nose_weight = Math.round((setup.front_weight_lbs / setup.total_weight) * 1000) / 10;
+  }
+  if (!setup.cross_weight && setup.lf_corner_weight && setup.rf_corner_weight && setup.lr_corner_weight && setup.rr_corner_weight) {
+    const diag = setup.lf_corner_weight + setup.rr_corner_weight;
+    const total = setup.lf_corner_weight + setup.rf_corner_weight + setup.lr_corner_weight + setup.rr_corner_weight;
+    setup.cross_weight = Math.round((diag / total) * 1000) / 10;
+    if (!setup.total_weight) setup.total_weight = total;
+    if (!setup.nose_weight) {
+      const front = setup.lf_corner_weight + setup.rf_corner_weight;
+      setup.nose_weight = Math.round((front / total) * 1000) / 10;
+    }
+  }
+
+  return setup;
+}
+
+// ─── SETUP STATUS (active/naming) ────────────────────────────────
+function updateSetupStatusUI() {
+  const setup = AppState.currentSetup;
+  const pill = document.getElementById('setup-status-pill');
+  const nameBar = document.getElementById('setup-name-bar');
+  const activePill = document.getElementById('setup-active-pill');
+
+  if (!setup) {
+    if (pill) pill.style.display = 'none';
+    if (nameBar) nameBar.style.display = 'none';
+    if (activePill) activePill.style.display = 'none';
+    return;
+  }
+
+  // Show name bar
+  if (nameBar) {
+    nameBar.style.display = 'flex';
+    const idEl = document.getElementById('snb-id');
+    const srcEl = document.getElementById('snb-source');
+    const nameIn = document.getElementById('snb-name-input');
+    if (idEl) idEl.textContent = setup.kappsId ? '⏱ ' + setup.kappsId : '';
+    if (srcEl) srcEl.textContent = setup.source === 'kapps' ? '📱 Kapps' : setup.source === 'iracing' ? '📄 iRacing' : '✏️ Manual';
+    if (nameIn) nameIn.value = setup.name || '';
+  }
+
+  // Setup status pill
+  if (pill) {
+    if (setup.isActive) {
+      pill.style.display = 'inline-flex';
+      pill.innerHTML = '✅ Setup Ativo: ' + (setup.name || 'Sem nome');
+      pill.className = 'setup-status-pill active';
+    } else {
+      pill.style.display = 'inline-flex';
+      pill.innerHTML = '🔧 Setup Carregado: ' + (setup.name || 'Sem nome');
+      pill.className = 'setup-status-pill loaded';
+    }
+  }
+
+  // Active badge on analysis panel
+  if (activePill) {
+    activePill.style.display = setup.isActive ? 'inline-flex' : 'none';
+  }
+}
+
+window.nameCurrentSetup = function() {
+  if (!AppState.currentSetup) return;
+  const nameIn = document.getElementById('snb-name-input');
+  const newName = nameIn ? nameIn.value.trim() : '';
+  if (!newName) { showNotification('Digite um nome para o acerto.', 'warn'); return; }
+  AppState.currentSetup.name = newName;
+  updateSetupStatusUI();
+  updateDashboard();
+  showNotification('Acerto nomeado: "' + newName + '"', 'success');
+};
+
+window.setSetupActive = function() {
+  if (!AppState.currentSetup) return;
+  // First name it if needed
+  const nameIn = document.getElementById('snb-name-input');
+  if (nameIn && nameIn.value.trim()) {
+    AppState.currentSetup.name = nameIn.value.trim();
+  }
+  AppState.currentSetup.isActive = true;
+  updateSetupStatusUI();
+  updateDashboard();
+  showNotification('✅ Setup "' + AppState.currentSetup.name + '" definido como ATIVO!', 'success');
+};
+
 window.analyzeManualSetup = function() {
   const setup = {
     name: document.getElementById('setup-name-input').value || 'Setup Manual',
@@ -253,8 +715,10 @@ window.analyzeManualSetup = function() {
   };
 
   AppState.currentSetup = setup;
+  setup.source = 'manual';
   renderSetupAnalysis(setup);
   updateDashboard();
+  updateSetupStatusUI();
   showNotification('Setup analisado com sucesso!', 'success');
 };
 
@@ -265,123 +729,300 @@ function renderSetupAnalysis(setup) {
   result.style.display = 'block';
   document.getElementById('analysis-badge').style.display = 'inline';
 
-  // Calculate balance indicators
-  const balance = analyzeBalance(setup);
+  const hasKappsData = setup.source === 'kapps';
 
-  let html = `
+  // Helper: render a param cell
+  const pCell = (label, value, unit, cssClass) => {
+    const v = (value !== undefined && value !== null && !isNaN(value)) ? value : '—';
+    return `<div class="param-item">
+      <div class="pi-label">${label}</div>
+      <div class="pi-value ${cssClass||''}">${v}${unit && v !== '—' ? `<small style="font-size:0.6rem;color:var(--text-dim)">${unit}</small>` : ''}</div>
+    </div>`;
+  };
+
+  // ── TIRES: Cold Pressure ──
+  let tiresSection = `
   <div class="analysis-section">
-    <div class="as-header">🛞 Pressões de Pneus</div>
+    <div class="as-header">🛞 Pressões de Pneus – Fria (Cold PSI)</div>
     <div class="as-content">
       <div class="param-grid">
-        <div class="param-item">
-          <div class="pi-label">LF PSI</div>
-          <div class="pi-value ${getPsiStatus(setup.lf_psi, 'LF')}">${setup.lf_psi || '—'}</div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RF PSI</div>
-          <div class="pi-value ${getPsiStatus(setup.rf_psi, 'RF')}">${setup.rf_psi || '—'}</div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">LR PSI</div>
-          <div class="pi-value ${getPsiStatus(setup.lr_psi, 'LR')}">${setup.lr_psi || '—'}</div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RR PSI</div>
-          <div class="pi-value ${getPsiStatus(setup.rr_psi, 'RR')}">${setup.rr_psi || '—'}</div>
-        </div>
+        ${pCell('LF Cold', setup.lf_psi, ' PSI', getPsiStatus(setup.lf_psi,'LF'))}
+        ${pCell('RF Cold', setup.rf_psi, ' PSI', getPsiStatus(setup.rf_psi,'RF'))}
+        ${pCell('LR Cold', setup.lr_psi, ' PSI', getPsiStatus(setup.lr_psi,'LR'))}
+        ${pCell('RR Cold', setup.rr_psi, ' PSI', getPsiStatus(setup.rr_psi,'RR'))}
       </div>
       <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzePressures(setup)}</div>
     </div>
-  </div>
+  </div>`;
 
+  // ── TIRES: Hot Pressure (Kapps only) ──
+  if (hasKappsData && (setup.lf_hot_psi || setup.rf_hot_psi || setup.lr_hot_psi || setup.rr_hot_psi)) {
+    const hotDiff = (cold, hot) => {
+      if (!cold || !hot) return '';
+      const d = (hot - cold).toFixed(1);
+      const color = Math.abs(d) > 5 ? 'var(--loose)' : Math.abs(d) > 3 ? 'var(--orange)' : 'var(--green)';
+      return `<span style="color:${color};font-size:0.7rem;margin-left:4px">(+${d})</span>`;
+    };
+    tiresSection += `
+  <div class="analysis-section">
+    <div class="as-header">🌡️ Pressões Quentes (Hot PSI) <span class="kapps-badge">KAPPS</span></div>
+    <div class="as-content">
+      <div class="param-grid">
+        <div class="param-item"><div class="pi-label">LF Hot</div><div class="pi-value">${setup.lf_hot_psi||'—'} PSI ${hotDiff(setup.lf_psi, setup.lf_hot_psi)}</div></div>
+        <div class="param-item"><div class="pi-label">RF Hot</div><div class="pi-value">${setup.rf_hot_psi||'—'} PSI ${hotDiff(setup.rf_psi, setup.rf_hot_psi)}</div></div>
+        <div class="param-item"><div class="pi-label">LR Hot</div><div class="pi-value">${setup.lr_hot_psi||'—'} PSI ${hotDiff(setup.lr_psi, setup.lr_hot_psi)}</div></div>
+        <div class="param-item"><div class="pi-label">RR Hot</div><div class="pi-value">${setup.rr_hot_psi||'—'} PSI ${hotDiff(setup.rr_psi, setup.rr_hot_psi)}</div></div>
+      </div>
+      ${setup.lf_lasthot_psi ? `<div class="mt-1" style="font-size:0.75rem;color:var(--text-dim)">
+        Última quente — LF: ${setup.lf_lasthot_psi} · RF: ${setup.rf_lasthot_psi||'—'} · LR: ${setup.lr_lasthot_psi||'—'} · RR: ${setup.rr_lasthot_psi||'—'}
+      </div>` : ''}
+    </div>
+  </div>`;
+  }
+
+  // ── TIRES: Temperatures (Kapps) ──
+  const hasTemps = setup.lf_temp_out || setup.rf_temp_out || setup.lr_temp_out || setup.rr_temp_out;
+  if (hasKappsData && hasTemps) {
+    const tempRow = (pfx, label) => {
+      const o = setup[pfx+'_temp_out'], m = setup[pfx+'_temp_mid'], i = setup[pfx+'_temp_in'];
+      if (!o && !m && !i) return '';
+      const spread = (o && i) ? Math.abs(o - i) : null;
+      const spreadColor = spread > 20 ? 'var(--loose)' : spread > 12 ? 'var(--orange)' : 'var(--green)';
+      return `<div class="tire-temp-row">
+        <div class="ttr-label">${label}</div>
+        <div class="ttr-temps">
+          <span class="ttr-out">${o||'—'}°</span>
+          <span class="ttr-mid">${m||'—'}°</span>
+          <span class="ttr-in">${i||'—'}°</span>
+        </div>
+        ${spread !== null ? `<div class="ttr-spread" style="color:${spreadColor}">Δ${spread.toFixed(0)}°</div>` : ''}
+      </div>`;
+    };
+    tiresSection += `
+  <div class="analysis-section">
+    <div class="as-header">🌡️ Temperaturas dos Pneus (Out / Mid / In) <span class="kapps-badge">KAPPS</span></div>
+    <div class="as-content">
+      <div class="tire-temp-grid">
+        <div class="ttr-header"><span></span><span>Out</span><span>Mid</span><span>In</span><span>Spread</span></div>
+        ${tempRow('lf','LF')}${tempRow('rf','RF')}${tempRow('lr','LR')}${tempRow('rr','RR')}
+      </div>
+      <div class="mt-1" style="font-size:0.75rem;color:var(--text-dim)">Δ ideal &lt; 10°C. Acima de 20°C indica desalinhamento ou pressão incorreta.</div>
+    </div>
+  </div>`;
+  }
+
+  // ── TIRES: Tread Wear (Kapps) ──
+  const hasTread = setup.lf_tread_out || setup.rf_tread_out || setup.lr_tread_out || setup.rr_tread_out;
+  if (hasKappsData && hasTread) {
+    const treadCell = (pfx, label) => {
+      const o = setup[pfx+'_tread_out'], m = setup[pfx+'_tread_mid'], i = setup[pfx+'_tread_in'];
+      const treadBar = (v) => {
+        if (v === null || v === undefined) return '';
+        const color = v < 20 ? '#e03030' : v < 50 ? '#e8a000' : '#00d26a';
+        return `<div class="tread-bar-wrap"><div class="tread-bar-bg"><div class="tread-bar-fill" style="width:${v}%;background:${color}"></div></div><span>${v}%</span></div>`;
+      };
+      if (!o && !m && !i) return '';
+      return `<div class="tread-row"><div class="tread-label">${label}</div>
+        <div class="tread-bars">${treadBar(o)}${treadBar(m)}${treadBar(i)}</div>
+        <div class="tread-tag" style="font-size:0.65rem;color:var(--text-dim)">Out/Mid/In</div>
+      </div>`;
+    };
+    tiresSection += `
+  <div class="analysis-section">
+    <div class="as-header">🔍 Desgaste de Pneus (Tread %) <span class="kapps-badge">KAPPS</span></div>
+    <div class="as-content">
+      <div class="tread-grid">
+        ${treadCell('lf','LF')}${treadCell('rf','RF')}${treadCell('lr','LR')}${treadCell('rr','RR')}
+      </div>
+    </div>
+  </div>`;
+  }
+
+  // ── SPRINGS ──
+  const springsSection = `
   <div class="analysis-section">
     <div class="as-header">🌀 Molas</div>
     <div class="as-content">
       <div class="param-grid">
-        <div class="param-item">
-          <div class="pi-label">LF Spring</div>
-          <div class="pi-value">${setup.lf_spring || '—'} <small style="font-size:0.6rem; color:var(--text-dim)">lbs</small></div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RF Spring</div>
-          <div class="pi-value">${setup.rf_spring || '—'} <small style="font-size:0.6rem; color:var(--text-dim)">lbs</small></div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">LR Spring</div>
-          <div class="pi-value">${setup.lr_spring || '—'} <small style="font-size:0.6rem; color:var(--text-dim)">lbs</small></div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RR Spring</div>
-          <div class="pi-value">${setup.rr_spring || '—'} <small style="font-size:0.6rem; color:var(--text-dim)">lbs</small></div>
-        </div>
+        ${pCell('LF Spring', setup.lf_spring, ' lbs')}
+        ${pCell('RF Spring', setup.rf_spring, ' lbs')}
+        ${pCell('LR Spring', setup.lr_spring, ' lbs')}
+        ${pCell('RR Spring', setup.rr_spring, ' lbs')}
       </div>
       <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzeSprings(setup)}</div>
     </div>
-  </div>
+  </div>`;
 
+  // ── RIDE HEIGHTS ──
+  const rhSection = (setup.lf_rh || setup.rf_rh || setup.lr_rh || setup.rr_rh) ? `
+  <div class="analysis-section">
+    <div class="as-header">📏 Ride Heights</div>
+    <div class="as-content">
+      <div class="param-grid">
+        ${pCell('LF RH', setup.lf_rh, '"')}
+        ${pCell('RF RH', setup.rf_rh, '"')}
+        ${pCell('LR RH', setup.lr_rh, '"')}
+        ${pCell('RR RH', setup.rr_rh, '"')}
+      </div>
+    </div>
+  </div>` : '';
+
+  // ── WEIGHT DISTRIBUTION ──
+  const cwColor = cw => (cw||50) > 50.5 ? 'var(--tight)' : (cw||50) < 49.5 ? 'var(--loose)' : 'var(--green)';
+  const nwColor = nw => (nw||52) > 52.5 ? 'var(--tight)' : (nw||52) < 51.5 ? 'var(--loose)' : 'var(--green)';
+
+  let weightSection = `
   <div class="analysis-section">
     <div class="as-header">⚖️ Distribuição de Peso</div>
     <div class="as-content">
       <div class="balance-indicator">
         <div class="bi-label">Nose Weight</div>
         <div class="bi-bar-container">
-          <div class="bi-bar ${(setup.nose_weight||52) > 52.5 ? 'tight' : (setup.nose_weight||52) < 51.5 ? 'loose' : 'balanced'}" style="width:${setup.nose_weight ? (setup.nose_weight - 48) * 20 : 50}%"></div>
+          <div class="bi-bar ${(setup.nose_weight||52) > 52.5 ? 'tight' : (setup.nose_weight||52) < 51.5 ? 'loose' : 'balanced'}" style="width:${setup.nose_weight ? Math.min(100,(setup.nose_weight - 48) * 20) : 50}%"></div>
         </div>
-        <div class="bi-value" style="color:${(setup.nose_weight||52) > 52.5 ? 'var(--tight)' : (setup.nose_weight||52) < 51.5 ? 'var(--loose)' : 'var(--green)'}">${setup.nose_weight || '—'}%</div>
+        <div class="bi-value" style="color:${nwColor(setup.nose_weight)}">${setup.nose_weight ? setup.nose_weight + '%' : '—'}</div>
       </div>
       <div class="balance-indicator">
         <div class="bi-label">Cross Weight</div>
         <div class="bi-bar-container">
-          <div class="bi-bar ${(setup.cross_weight||50) > 50.5 ? 'tight' : (setup.cross_weight||50) < 49.5 ? 'loose' : 'balanced'}" style="width:${setup.cross_weight ? (setup.cross_weight - 47) * 14 : 50}%"></div>
+          <div class="bi-bar ${(setup.cross_weight||50) > 50.5 ? 'tight' : (setup.cross_weight||50) < 49.5 ? 'loose' : 'balanced'}" style="width:${setup.cross_weight ? Math.min(100,(setup.cross_weight - 47) * 14) : 50}%"></div>
         </div>
-        <div class="bi-value" style="color:${(setup.cross_weight||50) > 50.5 ? 'var(--tight)' : (setup.cross_weight||50) < 49.5 ? 'var(--loose)' : 'var(--green)'}">${setup.cross_weight || '—'}%</div>
+        <div class="bi-value" style="color:${cwColor(setup.cross_weight)}">${setup.cross_weight ? setup.cross_weight + '%' : '—'}</div>
       </div>
       <div class="balance-indicator">
         <div class="bi-label">Brake Bias</div>
         <div class="bi-bar-container">
-          <div class="bi-bar ${(setup.brake_bias||54) > 56 ? 'loose' : (setup.brake_bias||54) < 52 ? 'tight' : 'balanced'}" style="width:${setup.brake_bias ? (setup.brake_bias - 48) * 7 : 42}%"></div>
+          <div class="bi-bar ${(setup.brake_bias||54) > 56 ? 'loose' : (setup.brake_bias||54) < 52 ? 'tight' : 'balanced'}" style="width:${setup.brake_bias ? Math.min(100,(setup.brake_bias - 48) * 7) : 42}%"></div>
         </div>
-        <div class="bi-value">${setup.brake_bias || '—'}%</div>
-      </div>
-    </div>
-  </div>
+        <div class="bi-value">${setup.brake_bias ? setup.brake_bias + '%' : '—'}</div>
+      </div>`;
 
-  ${setup.lf_camber || setup.rf_camber ? `
+  // Corner weights if available (Kapps)
+  if (setup.lf_corner_weight || setup.rf_corner_weight) {
+    const total = setup.total_weight || (
+      (setup.lf_corner_weight||0) + (setup.rf_corner_weight||0) +
+      (setup.lr_corner_weight||0) + (setup.rr_corner_weight||0)
+    );
+    weightSection += `
+      <div style="margin-top:0.8rem">
+        <div style="font-size:0.75rem;color:var(--gold);font-weight:700;margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em">Pesos por Canto (lbs) <span class="kapps-badge">KAPPS</span></div>
+        <div class="param-grid">
+          ${pCell('LF', setup.lf_corner_weight, ' lbs')}
+          ${pCell('RF', setup.rf_corner_weight, ' lbs')}
+          ${pCell('LR', setup.lr_corner_weight, ' lbs')}
+          ${pCell('RR', setup.rr_corner_weight, ' lbs')}
+        </div>
+        ${total ? `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.4rem">Peso Total: ${total} lbs · Frente: ${setup.front_weight_lbs||'—'} lbs · Traseira: ${setup.rear_weight_lbs||'—'} lbs · Esquerda: ${setup.left_weight_lbs||'—'} lbs</div>` : ''}
+      </div>`;
+  }
+  weightSection += `</div></div>`;
+
+  // ── GEOMETRY ──
+  let geoSection = '';
+  if (setup.lf_camber || setup.rf_camber || setup.lf_caster || setup.rf_caster) {
+    geoSection = `
   <div class="analysis-section">
     <div class="as-header">📐 Geometria</div>
     <div class="as-content">
       <div class="param-grid">
-        <div class="param-item">
-          <div class="pi-label">LF Camber</div>
-          <div class="pi-value">${setup.lf_camber || '—'}°</div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RF Camber</div>
-          <div class="pi-value ${setup.rf_camber && setup.rf_camber < -5.5 ? 'warn' : 'ok'}">${setup.rf_camber || '—'}°</div>
-        </div>
-        ${setup.lf_caster ? `
-        <div class="param-item">
-          <div class="pi-label">LF Caster</div>
-          <div class="pi-value">${setup.lf_caster}°</div>
-        </div>
-        <div class="param-item">
-          <div class="pi-label">RF Caster</div>
-          <div class="pi-value ok">${setup.rf_caster || '—'}°</div>
-        </div>
-        ` : ''}
+        ${pCell('LF Camber', setup.lf_camber, '°')}
+        ${pCell('RF Camber', setup.rf_camber, '°', setup.rf_camber && setup.rf_camber < -5.5 ? 'warn' : 'ok')}
+        ${setup.lf_caster ? pCell('LF Caster', setup.lf_caster, '°') : ''}
+        ${setup.rf_caster ? pCell('RF Caster', setup.rf_caster, '°') : ''}
+        ${setup.lf_toe !== undefined ? pCell('LF Toe', setup.lf_toe, '"') : ''}
+        ${setup.rf_toe !== undefined ? pCell('RF Toe', setup.rf_toe, '"') : ''}
+        ${setup.lr_camber !== undefined ? pCell('LR Camber', setup.lr_camber, '°') : ''}
+        ${setup.rr_camber !== undefined ? pCell('RR Camber', setup.rr_camber, '°') : ''}
+        ${setup.pinion_angle !== undefined ? pCell('Pinion Angle', setup.pinion_angle, '°') : ''}
+        ${setup.steer_offset !== undefined ? pCell('Steer Offset', setup.steer_offset, '') : ''}
       </div>
     </div>
-  </div>` : ''}
+  </div>`;
+  }
 
+  // ── SHOCKS ──
+  let shocksSection = '';
+  if (setup.lf_lsc || setup.rf_lsc || setup.lr_lsc || setup.rr_lsc) {
+    shocksSection = `
+  <div class="analysis-section">
+    <div class="as-header">🔩 Amortecedores</div>
+    <div class="as-content">
+      <div class="shock-table">
+        <div class="shock-table-head"><span></span><span>LS Comp</span><span>HS Comp</span><span>LS Reb</span><span>HS Reb</span></div>
+        ${['lf','rf','lr','rr'].map(p => `<div class="shock-table-row">
+          <span class="shock-corner-label">${p.toUpperCase()}</span>
+          <span>${setup[p+'_lsc']||'—'}</span>
+          <span>${setup[p+'_hsc']||'—'}</span>
+          <span>${setup[p+'_lsr']||'—'}</span>
+          <span>${setup[p+'_hsr']||'—'}</span>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+  }
+
+  // ── ARB ──
+  let arbSection = '';
+  if (setup.f_arb_diam || setup.f_arb_arm || setup.r_arb_diam || setup.r_arb_arm) {
+    arbSection = `
+  <div class="analysis-section">
+    <div class="as-header">🔗 Anti-Roll Bar (ARB)</div>
+    <div class="as-content">
+      <div class="param-grid">
+        ${pCell('Front Diam', setup.f_arb_diam, '"')}
+        ${pCell('Front Arm', setup.f_arb_arm ? 'P'+setup.f_arb_arm : null, '')}
+        ${setup.f_arb_preload !== undefined ? pCell('Front Preload', setup.f_arb_preload, ' lbs') : ''}
+        ${pCell('Rear Diam', setup.r_arb_diam, '"')}
+        ${pCell('Rear Arm', setup.r_arb_arm ? 'P'+setup.r_arb_arm : null, '')}
+        ${setup.r_arb_preload !== undefined ? pCell('Rear Preload', setup.r_arb_preload, ' lbs') : ''}
+      </div>
+    </div>
+  </div>`;
+  }
+
+  // ── DRIVETRAIN ──
+  let driveSection = '';
+  if (setup.final_drive || setup.diff_preload) {
+    driveSection = `
+  <div class="analysis-section">
+    <div class="as-header">⚙️ Drivetrain</div>
+    <div class="as-content">
+      <div class="param-grid">
+        ${setup.final_drive ? pCell('Final Drive', setup.final_drive, '') : ''}
+        ${setup.diff_preload !== undefined ? pCell('Diff Preload', setup.diff_preload, ' lbs') : ''}
+        ${setup.f_master_cyl ? pCell('Front M.C.', setup.f_master_cyl, '"') : ''}
+        ${setup.r_master_cyl ? pCell('Rear M.C.', setup.r_master_cyl, '"') : ''}
+      </div>
+    </div>
+  </div>`;
+  }
+
+  // ── AERO ──
+  let aeroSection = '';
+  if (setup.rear_spoiler || setup.front_splitter || setup.track_bar) {
+    aeroSection = `
+  <div class="analysis-section">
+    <div class="as-header">🌬️ Aerodinâmica</div>
+    <div class="as-content">
+      <div class="param-grid">
+        ${setup.rear_spoiler !== undefined ? pCell('Rear Spoiler', setup.rear_spoiler, '°') : ''}
+        ${setup.front_splitter !== undefined ? pCell('Front Splitter', setup.front_splitter, '"') : ''}
+        ${setup.track_bar !== undefined ? pCell('Track Bar', setup.track_bar, '"') : ''}
+      </div>
+    </div>
+  </div>`;
+  }
+
+  // ── DIAGNOSIS ──
+  const diagSection = `
   <div class="analysis-section">
     <div class="as-header">🧠 Diagnóstico Automático & Sugestões</div>
     <div class="as-content">
       ${generateAutoSuggestions(setup)}
     </div>
-  </div>
-  `;
+  </div>`;
 
-  result.innerHTML = html;
+  result.innerHTML = tiresSection + springsSection + rhSection + weightSection + geoSection + shocksSection + arbSection + driveSection + aeroSection + diagSection;
 }
 
 function analyzeBalance(setup) {
@@ -532,13 +1173,22 @@ function generateAutoSuggestions(setup) {
 // ─── SETUP SAVE/HISTORY ──────────────────────────────────────────
 window.saveCurrentSetup = function() {
   if (!AppState.currentSetup) {
-    analyzeManualSetup();
+    showNotification('Nenhum setup carregado para salvar.', 'warn');
+    return;
   }
-  const name = document.getElementById('setup-name-input').value || 'Setup ' + (AppState.setupHistory.length + 1);
+  // Prefer name from the snb-name-input or setup-name-input
+  const snbIn = document.getElementById('snb-name-input');
+  const nameIn = document.getElementById('setup-name-input');
+  const name = (snbIn && snbIn.value.trim()) ||
+               (nameIn && nameIn.value.trim()) ||
+               AppState.currentSetup.name ||
+               'Setup ' + (AppState.setupHistory.length + 1);
+  AppState.currentSetup.name = name;
   const setupToSave = { ...AppState.currentSetup, name, savedAt: new Date().toLocaleString('pt-BR') };
   AppState.setupHistory.unshift(setupToSave);
   saveHistory();
   updateDashboard();
+  updateSetupStatusUI();
   renderHistoryList();
   showNotification('Setup "' + name + '" salvo com sucesso!', 'success');
 };
@@ -591,6 +1241,7 @@ window.loadSetupFromHistory = function(idx) {
   AppState.currentSetup = { ...AppState.setupHistory[idx] };
   renderSetupAnalysis(AppState.currentSetup);
   updateDashboard();
+  updateSetupStatusUI();
   navigateTo('setup');
   showNotification('Setup carregado: ' + AppState.currentSetup.name, 'success');
 };

@@ -33,6 +33,7 @@
     </nav>
     <div class="header-right">
       <div class="status-pill" id="session-status">● Sessão Ativa</div>
+      <div class="setup-status-pill" id="setup-status-pill" style="display:none"></div>
     </div>
   </header>
 
@@ -228,13 +229,33 @@
         <div class="setup-input-panel">
           <div class="panel-header">📥 Entrada de Setup</div>
           <div class="input-tabs">
-            <button class="itab active" data-tab="paste">Cole o Setup</button>
+            <button class="itab active" data-tab="kapps">📱 Kapps</button>
+            <button class="itab" data-tab="paste">Cole o Setup</button>
             <button class="itab" data-tab="manual">Entrada Manual</button>
             <button class="itab" data-tab="templates">Templates</button>
           </div>
 
+          <!-- Kapps tab -->
+          <div class="itab-content active" id="tab-kapps">
+            <div class="kapps-header">
+              <div class="kapps-logo">📱 <span>Kapps Import</span></div>
+              <div class="kapps-desc">Cole o conteúdo copiado do Kapps (Ctrl+V direto do app). A primeira linha (horário) será usada como ID.</div>
+            </div>
+            <div class="form-group">
+              <textarea id="kapps-input" rows="22" placeholder="22:07:21&#10;Tires&#10;LeftFront&#10;ColdPressure&#9;138&quot;&#10;HotPressure&#9;152&quot;&#10;LastHotPressure&#9;151&quot;&#10;TempOutside&#9;183&#10;TempMiddle&#9;184&#10;TempInside&#9;182&#10;TreadOutside&#9;97%&#10;TreadMiddle&#9;95%&#10;TreadInside&#9;93%&#10;&#10;RightFront&#10;ColdPressure&#9;140&quot;&#10;...&#10;&#10;Chassis&#10;FrontWeight&#9;2341&#10;RearWeight&#9;1892&#10;LeftWeight&#9;2151&#10;CrossWeight&#9;50.1%&#10;..."></textarea>
+            </div>
+            <div class="kapps-actions">
+              <div class="kapps-name-row">
+                <input type="text" id="kapps-setup-name" placeholder="Nome do acerto (ex: Daytona_Q1_22h07)" class="setup-name-field"/>
+                <button class="btn-secondary" onclick="clearKappsInput()">🗑️ Limpar</button>
+              </div>
+              <button class="btn-primary full-width" onclick="parseKappsSetup()">🔍 Importar & Analisar Setup Kapps</button>
+            </div>
+            <div id="kapps-status-bar" class="kapps-status-bar" style="display:none"></div>
+          </div>
+
           <!-- Paste tab -->
-          <div class="itab-content active" id="tab-paste">
+          <div class="itab-content" id="tab-paste">
             <div class="form-group">
               <label>Cole o conteúdo do arquivo .sto ou texto do setup:</label>
               <textarea id="setup-input" rows="20" placeholder="[TIRE]&#10;leftFrontColdPressure=28&#10;rightFrontColdPressure=28&#10;leftRearColdPressure=22&#10;rightRearColdPressure=24&#10;&#10;[CHASSIS]&#10;frontBrakeBias=54.0&#10;noseWeight=52.0&#10;crossWeight=50.0&#10;..."></textarea>
@@ -498,7 +519,24 @@
 
         <!-- Right: Analysis -->
         <div class="setup-analysis-panel" id="setup-analysis-panel">
-          <div class="panel-header">📊 Análise do Setup <span class="analysis-badge" id="analysis-badge" style="display:none">ANALISADO</span></div>
+          <div class="panel-header">
+            📊 Análise do Setup
+            <span class="analysis-badge" id="analysis-badge" style="display:none">ANALISADO</span>
+            <span class="setup-active-pill" id="setup-active-pill" style="display:none">● ATIVO</span>
+          </div>
+          <!-- Setup name & action bar (shown after analysis) -->
+          <div id="setup-name-bar" class="setup-name-bar" style="display:none">
+            <div class="snb-left">
+              <span class="snb-id" id="snb-id"></span>
+              <span class="snb-source" id="snb-source"></span>
+            </div>
+            <div class="snb-right">
+              <input type="text" id="snb-name-input" class="snb-name-input" placeholder="Nome do acerto..."/>
+              <button class="btn-secondary snb-btn" onclick="nameCurrentSetup()">✏️ Nomear</button>
+              <button class="btn-primary snb-btn" onclick="setSetupActive()">✅ Definir Ativo</button>
+              <button class="btn-secondary snb-btn" onclick="saveCurrentSetup()">💾 Salvar</button>
+            </div>
+          </div>
           <div id="setup-analysis-empty" class="analysis-empty">
             <div class="ae-icon">🔧</div>
             <div class="ae-text">Carregue um setup para ver a análise completa aqui</div>

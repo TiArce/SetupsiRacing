@@ -2316,3 +2316,323 @@ input[type="range"]::-webkit-slider-thumb {
   .app-grid       { grid-template-columns: repeat(2, 1fr); }
   .advsim-group-tabs { flex-wrap: wrap; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   KAPPS IMPORT – Tab & UI
+═══════════════════════════════════════════════════════════════ */
+.kapps-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  background: linear-gradient(135deg, rgba(0,180,255,0.08), rgba(0,100,200,0.04));
+  border: 1px solid rgba(0,180,255,0.2);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+}
+.kapps-logo {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.kapps-logo span { font-family: 'Orbitron', sans-serif; font-size: 0.85rem; }
+.kapps-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.kapps-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.kapps-name-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.kapps-name-row .setup-name-field {
+  flex: 1;
+}
+.kapps-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0,210,106,0.08);
+  border: 1px solid rgba(0,210,106,0.25);
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+.ksb-ok { color: var(--green); font-weight: 700; }
+.ksb-id { color: var(--gold); font-family: 'Orbitron', sans-serif; font-size: 0.7rem; }
+.ksb-fields { color: var(--text-secondary); }
+
+/* Kapps badge (inline label) */
+.kapps-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-family: 'Orbitron', sans-serif;
+  background: rgba(0,180,255,0.15);
+  color: #00b4ff;
+  border: 1px solid rgba(0,180,255,0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  letter-spacing: 0.05em;
+}
+
+/* ── Setup name/status bar (below analysis panel header) ── */
+.setup-name-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.snb-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.snb-id {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.snb-source {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.snb-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.snb-name-input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  width: 160px;
+}
+.snb-name-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.snb-btn {
+  padding: 0.3rem 0.65rem !important;
+  font-size: 0.75rem !important;
+  white-space: nowrap;
+}
+
+/* ── Setup active pill (header) ── */
+.setup-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: fadeIn 0.3s ease;
+}
+.setup-status-pill.active {
+  background: rgba(0,210,106,0.15);
+  border: 1px solid rgba(0,210,106,0.4);
+  color: var(--green);
+}
+.setup-status-pill.loaded {
+  background: rgba(232,160,0,0.12);
+  border: 1px solid rgba(232,160,0,0.3);
+  color: var(--gold);
+}
+.setup-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px 8px;
+  background: rgba(0,210,106,0.15);
+  border: 1px solid rgba(0,210,106,0.4);
+  color: var(--green);
+  border-radius: 20px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: 'Orbitron', sans-serif;
+  margin-left: 0.5rem;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Shock table (compact) ── */
+.shock-table {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.shock-table-head, .shock-table-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 1fr 1fr;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  align-items: center;
+}
+.shock-table-head {
+  color: var(--gold);
+  font-weight: 700;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.shock-table-row {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+}
+.shock-table-row span { text-align: center; }
+.shock-corner-label {
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7rem !important;
+}
+
+/* ── Tire temperature grid ── */
+.tire-temp-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.ttr-header {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  font-size: 0.7rem;
+  color: var(--gold);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0 0.4rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.ttr-header span:nth-child(2) {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  text-align: center;
+}
+.tire-temp-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 0.35rem 0.4rem;
+}
+.ttr-label {
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+}
+.ttr-temps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  text-align: center;
+}
+.ttr-out, .ttr-mid, .ttr-in {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+.ttr-spread {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: right;
+  min-width: 40px;
+}
+
+/* ── Tread wear grid ── */
+.tread-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.tread-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+}
+.tread-label {
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+}
+.tread-bars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.3rem;
+  align-items: center;
+}
+.tread-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+.tread-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 30px;
+}
+.tread-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.tread-tag { color: var(--text-dim); font-size: 0.62rem; }
+
+/* ── header-right flex ── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
