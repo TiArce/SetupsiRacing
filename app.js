@@ -1,5 +1,5 @@
 // =============================================
-//  NASCAR Next Gen – Main Application Logic
+//  NASCAR Multi-Class – Main Application Logic
 //  app.js
 // =============================================
 
@@ -16,16 +16,451 @@ const AppState = {
 // Make globally accessible for simulator-advanced.js
 window.AppState = AppState;
 
+// ─── CLASS SELECTOR ──────────────────────────────────────────────
+window.selectClass = function(cls) {
+  window.AppClass = cls;
+  localStorage.setItem('nascar_class', cls);
+
+  const overlay = document.getElementById('class-selector-overlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  applyClassTheme(cls);
+
+  // Re-init with class context
+  loadHistoryForClass(cls);
+  updateDashboard();
+  updateClassUI(cls);
+
+  // Clear current setup when switching class
+  AppState.currentSetup = null;
+  updateSetupStatusUI();
+  const analysisEmpty = document.getElementById('setup-analysis-empty');
+  const analysisResult = document.getElementById('setup-analysis-result');
+  const analysisBadge = document.getElementById('analysis-badge');
+  if (analysisEmpty) analysisEmpty.style.display = '';
+  if (analysisResult) { analysisResult.style.display = 'none'; analysisResult.innerHTML = ''; }
+  if (analysisBadge) analysisBadge.style.display = 'none';
+
+  // Re-render advanced simulator if on that page
+  if (AppState.currentPage === 'advsim') {
+    setTimeout(() => window.renderAdvancedSimulator && window.renderAdvancedSimulator(), 100);
+  }
+
+  showNotification(`Classe ${cls} selecionada: ${window.CLASS_CONFIGS?.[cls]?.name || cls}`, 'success');
+};
+
+window.showClassSelector = function() {
+  const overlay = document.getElementById('class-selector-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+};
+
+function applyClassTheme(cls) {
+  const body = document.body;
+  body.classList.remove('class-a','class-b','class-c');
+  body.classList.add('class-' + cls.toLowerCase());
+  document.documentElement.setAttribute('data-class', cls);
+}
+
+function updateClassUI(cls) {
+  const cfg = window.CLASS_CONFIGS ? window.CLASS_CONFIGS[cls] : null;
+  if (!cfg) return;
+
+  // Update header
+  const nameEl = document.getElementById('header-car-name');
+  const subEl  = document.getElementById('header-car-sub');
+  const badgeEl= document.getElementById('header-class-badge');
+  if (nameEl) nameEl.textContent = cfg.name;
+  if (subEl)  subEl.textContent  = 'Engenheiro Virtual · iRacing ' + cfg.subtitle;
+  if (badgeEl) {
+    badgeEl.textContent = 'CLASS ' + cls;
+    badgeEl.className = 'header-class-badge badge-' + cls.toLowerCase();
+  }
+
+  // Update dashboard hero text
+  const heroPEl = document.querySelector('.hero-content p');
+  if (heroPEl) heroPEl.textContent = 'Sistema avançado de engenharia de setups para ' + cfg.name + ' · iRacing ' + cfg.subtitle;
+
+  // Update setup page title
+  const setupTitleEl = document.querySelector('#page-setup .page-title-bar h2');
+  if (setupTitleEl) setupTitleEl.textContent = '🔧 Setup Analyzer – ' + cfg.name;
+  const setupSubEl = document.querySelector('#page-setup .page-title-bar p');
+  if (setupSubEl) setupSubEl.textContent = 'Cole ou insira seu setup para análise automática · ' + cfg.subtitle;
+
+  // Update advanced sim title
+  const simTitle = document.getElementById('advsim-page-title');
+  if (simTitle) simTitle.textContent = '🎮 Simulador Avançado de Setup – ' + cfg.name;
+
+  // Rebuild manual form for new class
+  renderManualForm(cls);
+
+  // Update pitstop matrix for B/C
+  renderPitstopMatrix(cls);
+
+  // Update textarea placeholder for Kapps tab based on class
+  const kappsInput = document.getElementById('kapps-input');
+  if (kappsInput) {
+    if (cls === 'B' || cls === 'C') {
+      kappsInput.placeholder = [
+        cls === 'B' ? '18:30:58' : '18:29:09',
+        'Tires',
+        'LeftFront',
+        'ColdPressure\t' + (cls === 'B' ? '172 kPa' : '179 kPa'),
+        'LastHotPressure\t' + (cls === 'B' ? '172 kPa' : '179 kPa'),
+        'LastTempsOMI\t40C, 40C, 40C',
+        'TreadRemaining\t100%, 100%, 100%',
+        'RightFront',
+        'ColdPressure\t310 kPa',
+        '...',
+        'Chassis',
+        'Front',
+        'NoseWeight\t' + (cls === 'B' ? '51.1%' : '50.1%'),
+        'CrossWeight\t' + (cls === 'B' ? '52.0%' : '50.5%'),
+        '...',
+      ].join('\n');
+    } else {
+      kappsInput.placeholder = '22:07:21\nTires\nLeftFront\nColdPressure\t138"\nHotPressure\t152"\n...';
+    }
+  }
+}
+
+// ─── DYNAMIC MANUAL FORM RENDERER ────────────────────────────────
+function renderManualForm(cls) {
+  const container = document.getElementById('manual-form');
+  if (!container) return;
+  const isBorC = cls === 'B' || cls === 'C';
+
+  if (!isBorC) {
+    // Class A: restore static form (in case user was on B/C before)
+    // Only rebuild if the form doesn't already have Class A fields
+    if (!document.getElementById('mf-lf-psi') || container.querySelector('.class-b-form')) {
+      container.innerHTML = `
+      <div class="mf-section">
+        <div class="mf-section-title">🛞 Pneus – Pressão Fria (PSI)</div>
+        <div class="mf-grid-4">
+          <div class="mf-field"><label>LF</label><input type="number" id="mf-lf-psi" value="28" step="0.5" min="15" max="45"/></div>
+          <div class="mf-field"><label>RF</label><input type="number" id="mf-rf-psi" value="28" step="0.5" min="15" max="45"/></div>
+          <div class="mf-field"><label>LR</label><input type="number" id="mf-lr-psi" value="22" step="0.5" min="15" max="45"/></div>
+          <div class="mf-field"><label>RR</label><input type="number" id="mf-rr-psi" value="24" step="0.5" min="15" max="45"/></div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">🌀 Molas (lbs/in)</div>
+        <div class="mf-grid-4">
+          <div class="mf-field"><label>LF Spring</label><input type="number" id="mf-lf-spring" value="550" step="25" min="150" max="2500"/></div>
+          <div class="mf-field"><label>RF Spring</label><input type="number" id="mf-rf-spring" value="600" step="25" min="150" max="2500"/></div>
+          <div class="mf-field"><label>LR Spring</label><input type="number" id="mf-lr-spring" value="200" step="25" min="100" max="2000"/></div>
+          <div class="mf-field"><label>RR Spring</label><input type="number" id="mf-rr-spring" value="225" step="25" min="100" max="2000"/></div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">📏 Ride Height (in)</div>
+        <div class="mf-grid-4">
+          <div class="mf-field"><label>LF RH</label><input type="number" id="mf-lf-rh" value="3.5" step="0.1" min="1" max="8"/></div>
+          <div class="mf-field"><label>RF RH</label><input type="number" id="mf-rf-rh" value="3.2" step="0.1" min="1" max="8"/></div>
+          <div class="mf-field"><label>LR RH</label><input type="number" id="mf-lr-rh" value="5.5" step="0.1" min="1" max="10"/></div>
+          <div class="mf-field"><label>RR RH</label><input type="number" id="mf-rr-rh" value="4.8" step="0.1" min="1" max="10"/></div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">⚖️ Peso & Geometria</div>
+        <div class="mf-grid-3">
+          <div class="mf-field"><label>Nose Weight %</label><input type="number" id="mf-nose" value="52.0" step="0.1" min="48" max="56"/></div>
+          <div class="mf-field"><label>Cross Weight %</label><input type="number" id="mf-cross" value="50.0" step="0.1" min="46" max="54"/></div>
+          <div class="mf-field"><label>Brake Bias %</label><input type="number" id="mf-bb" value="54.0" step="0.1" min="48" max="62"/></div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">📐 Geometria – Câmbio/Caster/Toe</div>
+        <div class="mf-grid-4">
+          <div class="mf-field"><label>LF Camber</label><input type="number" id="mf-lf-camber" value="3.5" step="0.1" min="0" max="6"/></div>
+          <div class="mf-field"><label>RF Camber</label><input type="number" id="mf-rf-camber" value="-4.5" step="0.1" min="-7" max="0"/></div>
+          <div class="mf-field"><label>LF Caster</label><input type="number" id="mf-lf-caster" value="4.0" step="0.1" min="2" max="8"/></div>
+          <div class="mf-field"><label>RF Caster</label><input type="number" id="mf-rf-caster" value="6.0" step="0.1" min="2" max="10"/></div>
+          <div class="mf-field"><label>LF Toe</label><input type="number" id="mf-lf-toe" value="0.05" step="0.01" min="-0.2" max="0.2"/></div>
+          <div class="mf-field"><label>RF Toe</label><input type="number" id="mf-rf-toe" value="-0.05" step="0.01" min="-0.2" max="0.2"/></div>
+          <div class="mf-field"><label>LR Camber</label><input type="number" id="mf-lr-camber" value="0.5" step="0.1" min="-2" max="3"/></div>
+          <div class="mf-field"><label>RR Camber</label><input type="number" id="mf-rr-camber" value="-3.0" step="0.1" min="-5" max="0"/></div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">🔗 Anti-Roll Bar (ARB)</div>
+        <div class="mf-grid-4">
+          <div class="mf-field"><label>Front Diameter</label>
+            <select id="mf-f-arb-diam">
+              <option value="2.00">2.00" (Rígido)</option>
+              <option value="1.375" selected>1.375" (Macio)</option>
+            </select>
+          </div>
+          <div class="mf-field"><label>Front ARB Arm</label>
+            <select id="mf-f-arb-arm">
+              <option value="1">P1</option><option value="2">P2</option>
+              <option value="3" selected>P3</option><option value="4">P4</option><option value="5">P5</option>
+            </select>
+          </div>
+          <div class="mf-field"><label>Rear Diameter</label>
+            <select id="mf-r-arb-diam">
+              <option value="2.00">2.00" (Rígido)</option>
+              <option value="1.375" selected>1.375" (Macio)</option>
+            </select>
+          </div>
+          <div class="mf-field"><label>Rear ARB Arm</label>
+            <select id="mf-r-arb-arm">
+              <option value="1">P1</option><option value="2">P2</option>
+              <option value="3" selected>P3</option><option value="4">P4</option><option value="5">P5</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="mf-section">
+        <div class="mf-section-title">🔩 Amortecedores</div>
+        <div class="shock-grid">
+          ${['lf','rf','lr','rr'].map(c => `
+          <div class="shock-corner">
+            <div class="sc-label">${c.toUpperCase()}</div>
+            <div class="sc-fields">
+              <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-${c}-lsc" value="5" step="1" min="1" max="12"/></div>
+              <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-${c}-hsc" value="4" step="1" min="1" max="12"/></div>
+              <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-${c}-lsr" value="6" step="1" min="1" max="12"/></div>
+              <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-${c}-hsr" value="5" step="1" min="1" max="12"/></div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="mf-actions">
+        <input type="text" id="setup-name-input" placeholder="Nome do setup (ex: Daytona_Q1)" class="setup-name-field"/>
+        <button class="btn-primary" onclick="analyzeManualSetup()">🔍 Analisar Setup</button>
+        <button class="btn-secondary" onclick="saveCurrentSetup()">💾 Salvar</button>
+      </div>
+      `;
+    }
+    return;
+  }
+  const cfg = window.CLASS_CONFIGS[cls];
+  const sd = cfg.sim_defaults;
+  const uPres = cfg.pressure_unit;
+  const uSpring = cfg.spring_unit;
+  const uHeight = cfg.height_unit;
+
+  const frontSpringLabel = cls === 'C' ? `Mola Dianteira (${uSpring}) – Pigtail` : `Shock Spring Dianteira (${uSpring})`;
+  const lf_shock_def = cls === 'B' ? 1575 : 1575;
+  const rf_shock_def = cls === 'B' ? 1575 : 1575;
+
+  container.innerHTML = `
+    <!-- Pressures -->
+    <div class="mf-section">
+      <div class="mf-section-title">🛞 Pneus – Pressão Fria (${uPres})</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LF</label><input type="number" id="mf-lf-psi" value="${cls==='B'?172:179}" step="1" min="100" max="400"/></div>
+        <div class="mf-field"><label>RF</label><input type="number" id="mf-rf-psi" value="310" step="1" min="200" max="450"/></div>
+        <div class="mf-field"><label>LR</label><input type="number" id="mf-lr-psi" value="${cls==='B'?172:179}" step="1" min="100" max="400"/></div>
+        <div class="mf-field"><label>RR</label><input type="number" id="mf-rr-psi" value="310" step="1" min="200" max="450"/></div>
+      </div>
+    </div>
+
+    <!-- Front Springs (Shock Spring or Pigtail) -->
+    <div class="mf-section">
+      <div class="mf-section-title">🌀 ${frontSpringLabel}</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LF Shock Spring</label><input type="number" id="mf-lf-shock-spring" value="${lf_shock_def}" step="25" min="100" max="3000"/></div>
+        <div class="mf-field"><label>RF Shock Spring</label><input type="number" id="mf-rf-shock-spring" value="${rf_shock_def}" step="25" min="100" max="3000"/></div>
+        ${cls==='C' ? `
+        <div class="mf-field"><label>LF Spring Angle °</label><input type="number" id="mf-lf-spring-angle" value="35" step="1" min="0" max="90"/></div>
+        <div class="mf-field"><label>RF Spring Angle °</label><input type="number" id="mf-rf-spring-angle" value="5" step="1" min="0" max="90"/></div>
+        ` : `
+        <div class="mf-field"><label>LF Packer mm</label><input type="number" id="mf-lf-packer" value="12.7" step="1.27" min="0" max="50"/></div>
+        <div class="mf-field"><label>RF Packer mm</label><input type="number" id="mf-rf-packer" value="25.4" step="1.27" min="0" max="50"/></div>
+        `}
+      </div>
+      <!-- Also map to generic lf_spring / rf_spring for analysis -->
+      <input type="hidden" id="mf-lf-spring" value="${lf_shock_def}"/>
+      <input type="hidden" id="mf-rf-spring" value="${rf_shock_def}"/>
+    </div>
+
+    <!-- Rear Springs -->
+    <div class="mf-section">
+      <div class="mf-section-title">🌀 Molas Traseiras (${uSpring})</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LR Spring</label><input type="number" id="mf-lr-spring" value="${cls==='B'?70:131}" step="5" min="5" max="500"/></div>
+        <div class="mf-field"><label>RR Spring</label><input type="number" id="mf-rr-spring" value="${cls==='B'?35:236}" step="5" min="5" max="500"/></div>
+      </div>
+    </div>
+
+    <!-- Ride Heights -->
+    <div class="mf-section">
+      <div class="mf-section-title">📏 Ride Heights (${uHeight})</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LF RH</label><input type="number" id="mf-lf-rh" value="${sd.lf_rh||108}" step="1" min="50" max="300"/></div>
+        <div class="mf-field"><label>RF RH</label><input type="number" id="mf-rf-rh" value="${sd.rf_rh||110}" step="1" min="50" max="300"/></div>
+        <div class="mf-field"><label>LR RH</label><input type="number" id="mf-lr-rh" value="${sd.lr_rh||162}" step="1" min="50" max="350"/></div>
+        <div class="mf-field"><label>RR RH</label><input type="number" id="mf-rr-rh" value="${sd.rr_rh||164}" step="1" min="50" max="350"/></div>
+      </div>
+    </div>
+
+    <!-- Track Bar -->
+    <div class="mf-section">
+      <div class="mf-section-title">📏 Track Bar (mm)</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LR Track Bar</label><input type="number" id="mf-lr-trackbar" value="${cls==='B'?159:222}" step="1" min="80" max="350"/></div>
+        <div class="mf-field"><label>RR Track Bar</label><input type="number" id="mf-rr-trackbar" value="${cls==='B'?165:229}" step="1" min="80" max="350"/></div>
+      </div>
+    </div>
+
+    <!-- Chassis / Weight -->
+    <div class="mf-section">
+      <div class="mf-section-title">⚖️ Chassi & Peso</div>
+      <div class="mf-grid-3">
+        <div class="mf-field"><label>Nose Weight %</label><input type="number" id="mf-nose" value="${sd.nose_weight||51.1}" step="0.1" min="47" max="56"/></div>
+        <div class="mf-field"><label>Cross Weight %</label><input type="number" id="mf-cross" value="${sd.cross_weight||52.0}" step="0.1" min="46" max="56"/></div>
+        <div class="mf-field"><label>Brake Bias %</label><input type="number" id="mf-bb" value="${sd.brake_bias||65.0}" step="0.1" min="55" max="75"/></div>
+      </div>
+      <div class="mf-grid-3" style="margin-top:0.5rem">
+        <div class="mf-field"><label>Ballast Forward mm</label><input type="number" id="mf-ballast-forward" value="${cls==='B'?838:-559}" step="10" min="-1200" max="1200"/></div>
+        <div class="mf-field"><label>Steering Ratio</label><input type="number" id="mf-steering-ratio" value="841" step="1" min="600" max="1200"/></div>
+        <div class="mf-field"><label>Steering Offset °</label><input type="number" id="mf-steering-offset" value="${cls==='B'?14:3}" step="1" min="-30" max="30"/></div>
+      </div>
+    </div>
+
+    <!-- Geometry -->
+    <div class="mf-section">
+      <div class="mf-section-title">📐 Geometria – Câmbio/Caster/Toe</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>LF Camber °</label><input type="number" id="mf-lf-camber" value="${sd.lf_camber||5.9}" step="0.1" min="0" max="9"/></div>
+        <div class="mf-field"><label>RF Camber °</label><input type="number" id="mf-rf-camber" value="${sd.rf_camber||-3.3}" step="0.1" min="-7" max="0"/></div>
+        <div class="mf-field"><label>LF Caster °</label><input type="number" id="mf-lf-caster" value="${cls==='B'?13.3:7.7}" step="0.1" min="3" max="20"/></div>
+        <div class="mf-field"><label>RF Caster °</label><input type="number" id="mf-rf-caster" value="${cls==='B'?13.3:7.7}" step="0.1" min="3" max="20"/></div>
+        <div class="mf-field"><label>LF Toe mm</label><input type="number" id="mf-lf-toe" value="-6" step="1" min="-15" max="10"/></div>
+        <div class="mf-field"><label>RF Toe mm</label><input type="number" id="mf-rf-toe" value="-6" step="1" min="-15" max="10"/></div>
+        <div class="mf-field"><label>LR Camber °</label><input type="number" id="mf-lr-camber" value="0" step="0.1" min="-3" max="3"/></div>
+        <div class="mf-field"><label>RR Camber °</label><input type="number" id="mf-rr-camber" value="0" step="0.1" min="-3" max="3"/></div>
+      </div>
+    </div>
+
+    <!-- ARB -->
+    <div class="mf-section">
+      <div class="mf-section-title">🔗 Anti-Roll Bar (ARB)</div>
+      <div class="mf-grid-4">
+        <div class="mf-field"><label>Front Diameter mm</label><input type="number" id="mf-f-arb-diam" value="${cls==='C'?64:51}" step="1" min="20" max="80"/></div>
+        <div class="mf-field"><label>Front ARB Arm</label>
+          <select id="mf-f-arb-arm">
+            <option value="1">P1 (Mais macio)</option>
+            <option value="2">P2</option>
+            <option value="3">P3</option>
+            <option value="4">P4</option>
+            <option value="5" selected>P5 (Mais rígido)</option>
+            ${cls==='C'?'<option value="6">Max</option>':''}
+          </select>
+        </div>
+        <div class="mf-field"><label>ARB Link Slack mm</label><input type="number" id="mf-f-arb-link-slack" value="${cls==='B'?-1:19}" step="1" min="-15" max="60"/></div>
+        <div class="mf-field"><label>ARB Preload Nm</label><input type="number" id="mf-f-arb-preload" value="${cls==='B'?-182.4:0}" step="10" min="-400" max="400"/></div>
+        <input type="hidden" id="mf-r-arb-diam" value="0"/>
+        <input type="hidden" id="mf-r-arb-arm" value="0"/>
+      </div>
+    </div>
+
+    <!-- Truck Arm -->
+    <div class="mf-section">
+      <div class="mf-section-title">🔧 Truck Arm</div>
+      <div class="mf-grid-3">
+        <div class="mf-field"><label>Mount Position</label>
+          <select id="mf-truck-arm-mount">
+            <option value="bottom" selected>Bottom (mais grip)</option>
+            <option value="top">Top (mais rotação)</option>
+          </select>
+        </div>
+        <div class="mf-field"><label>Preload Nm</label><input type="number" id="mf-truck-arm-preload" value="${cls==='B'?0:-7.8}" step="1" min="-50" max="50"/></div>
+        <div class="mf-field"><label>Rear End Ratio</label><input type="number" id="mf-rear-end-ratio" value="${cls==='B'?3.89:3.33}" step="0.01" min="2.5" max="5.5"/></div>
+      </div>
+    </div>
+
+    <!-- Tape -->
+    <div class="mf-section">
+      <div class="mf-section-title">🏁 Configuração de Fita</div>
+      <div class="mf-grid-3">
+        <div class="mf-field"><label>Tape Configuration</label>
+          <select id="mf-tape-config">
+            <option value="Qual">Qual (mais velocidade)</option>
+            <option value="Race" selected>Race (equilíbrio)</option>
+            <option value="Open">Open (mais resfriamento)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shocks -->
+    <div class="mf-section">
+      <div class="mf-section-title">🔩 Amortecedores</div>
+      <div class="shock-grid">
+        ${['lf','rf','lr','rr'].map(c => `
+        <div class="shock-corner">
+          <div class="sc-label">${c.toUpperCase()}</div>
+          <div class="sc-fields">
+            <div class="mf-field"><label>LS Comp</label><input type="number" id="mf-${c}-lsc" value="5" step="1" min="1" max="16"/></div>
+            <div class="mf-field"><label>HS Comp</label><input type="number" id="mf-${c}-hsc" value="4" step="1" min="1" max="16"/></div>
+            <div class="mf-field"><label>LS Reb</label><input type="number" id="mf-${c}-lsr" value="6" step="1" min="1" max="16"/></div>
+            <div class="mf-field"><label>HS Reb</label><input type="number" id="mf-${c}-hsr" value="5" step="1" min="1" max="16"/></div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="mf-actions">
+      <input type="text" id="setup-name-input" placeholder="Nome do setup (ex: Charlotte_Race_${cls})" class="setup-name-field"/>
+      <button class="btn-primary" onclick="analyzeManualSetup()">🔍 Analisar Setup</button>
+      <button class="btn-secondary" onclick="saveCurrentSetup()">💾 Salvar</button>
+    </div>
+  `;
+
+  // Sync hidden lf/rf spring with shock spring on input
+  const syncHidden = (id, hiddenId) => {
+    const el = document.getElementById(id);
+    const hid = document.getElementById(hiddenId);
+    if (el && hid) el.addEventListener('input', () => hid.value = el.value);
+  };
+  syncHidden('mf-lf-shock-spring', 'mf-lf-spring');
+  syncHidden('mf-rf-shock-spring', 'mf-rf-spring');
+}
+
 // ─── INIT ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  loadHistory();
+  // Check saved class preference
+  const savedClass = localStorage.getItem('nascar_class') || 'A';
+
+  // Show overlay if no saved class (first visit) OR always show on load
+  const overlay = document.getElementById('class-selector-overlay');
+  // If they have a saved class, auto-load it but still show overlay briefly for UX
+  if (savedClass && savedClass !== 'A' || localStorage.getItem('nascar_class')) {
+    // User has been here before — skip overlay, load directly
+    window.AppClass = savedClass;
+    if (overlay) overlay.classList.add('hidden');
+    applyClassTheme(savedClass);
+    updateClassUI(savedClass);
+  }
+  // else overlay stays visible (new user must pick a class)
+
+  loadHistoryForClass(window.AppClass || 'A');
   setupNavigation();
   setupTabSwitching();
   initTracksList();
   initDynamics();
   initChat();
   updateDashboard();
+  // Apply class-specific UI for the loaded/saved class
+  updateClassUI(window.AppClass || 'A');
 });
+
+function loadHistoryForClass(cls) {
+  try {
+    const key = 'nascar_setups_' + cls;
+    const saved = localStorage.getItem(key);
+    AppState.setupHistory = saved ? JSON.parse(saved) : [];
+    // Also check legacy key for Class A
+    if (cls === 'A' && !saved) {
+      const legacy = localStorage.getItem('nascar_setups');
+      if (legacy) AppState.setupHistory = JSON.parse(legacy);
+    }
+  } catch(e) { AppState.setupHistory = []; }
+  renderHistoryList();
+}
 
 // ─── NAVIGATION ──────────────────────────────────────────────────
 function setupNavigation() {
@@ -280,7 +715,8 @@ function parseKappsText(text) {
   const lines = text.split('\n');
   if (!lines.length) return null;
 
-  const setup = { raw: text, source: 'kapps' };
+  const cls = window.AppClass || 'A';
+  const setup = { raw: text, source: 'kapps', carClass: cls };
 
   // First non-empty line = timestamp ID
   let idLine = '';
@@ -289,314 +725,286 @@ function parseKappsText(text) {
     const t = lines[i].trim();
     if (t) { idLine = t; startIdx = i + 1; break; }
   }
-
-  // Check if idLine looks like HH:MM:SS
   const timeRe = /^\d{1,2}:\d{2}(:\d{2})?$/;
   if (timeRe.test(idLine)) {
     setup.kappsId = idLine;
     setup.name = 'Kapps ' + idLine;
   } else {
-    // Not a time ID – try to parse anyway
     setup.kappsId = idLine;
     setup.name = 'Kapps Setup';
-    startIdx = 0; // reparse from beginning
+    startIdx = 0;
   }
-
   setup.timestamp = new Date().toISOString();
 
-  let section = '';    // Top-level section: tires, chassis, front, rear, aero, brakes, geometry
-  let corner = '';     // Corner: leftfront, rightfront, leftrear, rightrear
-  let subSection = ''; // Sub-section within chassis, etc.
+  let section = '';
+  let corner = '';
+  let subSection = '';
 
   const cornerMap = {
     'leftfront': 'lf', 'rightfront': 'rf', 'leftrear': 'lr', 'rightrear': 'rr',
     'lf': 'lf', 'rf': 'rf', 'lr': 'lr', 'rr': 'rr',
-    'front left': 'lf', 'front right': 'rf', 'rear left': 'lr', 'rear right': 'rr'
   };
 
-  // Parse tire kPa → PSI conversion: 138 kPa ≈ 20.0 PSI (Kapps uses kPa? or raw PSI?)
-  // The example shows 138" – in iRacing, tire pressures in setup files are in kPa
-  // 138 kPa = 20.0 PSI. But wait – could be 138 = PSI*100? Let's check: 138/100 = 1.38? No.
-  // Actually iRacing .sto files store pressure as kPa integer: 138 kPa ≈ 20.0 PSI
-  // Kapps likely shows the same raw value. We'll store raw and also convert.
-  // Common range: 130-200 kPa = 18.8-29.0 PSI
-  const kpaToPsi = (v) => v > 50 ? Math.round((v / 6.89476) * 10) / 10 : v;
+  // Pressure handling: Class A uses kPa→PSI, Class B/C keep raw kPa
+  const isBorC = cls === 'B' || cls === 'C';
+  const processPressure = (v) => {
+    if (!v) return null;
+    // "172 kPa" → strip "kPa" → 172
+    const n = typeof v === 'string' ? parseFloat(v.replace(/[^\d.]/g,'')) : v;
+    if (isBorC) return n; // keep kPa for B/C
+    return n > 50 ? Math.round((n / 6.89476) * 10) / 10 : n; // kPa→PSI for A
+  };
+
+  // Parse comma-separated temps: "40C, 40C, 40C" or "183, 184, 182"
+  const parseTriple = (s) => {
+    const parts = String(s).split(',').map(p => parseFloat(p.replace(/[^\d.]/g,''))).filter(n => !isNaN(n));
+    return parts.length >= 3 ? parts : null;
+  };
 
   for (let i = startIdx; i < lines.length; i++) {
     const raw = lines[i];
     const line = raw.trimEnd();
     if (!line.trim()) continue;
 
-    // Determine indentation level
     const indent = line.length - line.trimStart().length;
     const trimmed = line.trim();
-    const lower = trimmed.toLowerCase();
+    const lower = trimmed.toLowerCase().replace(/\s+/g, '');
 
-    // --- Section headers (indent 0 or 1) ---
-    if (indent <= 1 && trimmed && !/\t/.test(raw.replace(/^\s*/, ''))) {
-      // Could be section header or corner header
-      const noTab = !trimmed.includes('\t');
-
-      if (noTab) {
-        // Section or corner identifier
-        if (lower === 'tires' || lower === 'tire') {
-          section = 'tires'; corner = ''; subSection = '';
-        } else if (lower === 'chassis') {
-          section = 'chassis'; corner = ''; subSection = '';
-        } else if (lower === 'front' && section !== 'tires') {
-          section = 'chassis'; subSection = 'front'; corner = '';
-        } else if (lower === 'rear' && section !== 'tires') {
-          section = 'chassis'; subSection = 'rear'; corner = '';
-        } else if (lower === 'aero' || lower === 'aerodynamics') {
-          section = 'aero'; corner = ''; subSection = '';
-        } else if (lower === 'brakes' || lower === 'brake') {
-          section = 'brakes'; corner = ''; subSection = '';
-        } else if (lower === 'geometry' || lower === 'suspension') {
-          section = 'geometry'; corner = ''; subSection = '';
-        } else if (lower === 'drivetrain' || lower === 'differential') {
-          section = 'drivetrain'; corner = ''; subSection = '';
-        } else if (lower === 'pitroad' || lower === 'pit road' || lower === 'pit') {
-          section = 'pitroad'; corner = ''; subSection = '';
-        } else if (lower === 'springs') {
-          section = 'springs'; corner = ''; subSection = '';
-        } else if (lower === 'shocks' || lower === 'dampers') {
-          section = 'shocks'; corner = ''; subSection = '';
-        } else if (lower === 'arb' || lower === 'antirollbar' || lower === 'anti-roll') {
-          section = 'arb'; corner = ''; subSection = '';
-        } else if (lower in cornerMap) {
-          corner = cornerMap[lower];
-        } else if (lower === 'leftfront' || lower === 'left front') {
-          corner = 'lf';
-        } else if (lower === 'rightfront' || lower === 'right front') {
-          corner = 'rf';
-        } else if (lower === 'leftrear' || lower === 'left rear') {
-          corner = 'lr';
-        } else if (lower === 'rightrear' || lower === 'right rear') {
-          corner = 'rr';
-        } else {
-          // Unknown single-word line at low indent = new section/subsection
-          subSection = lower;
-        }
-        continue;
+    // ── Section/corner headers (no tab separator) ──
+    const hasSep = trimmed.includes('\t') || trimmed.match(/\s{3,}/);
+    if (!hasSep) {
+      switch (lower) {
+        case 'tires': case 'tire':
+          section = 'tires'; corner = ''; subSection = ''; continue;
+        case 'chassis':
+          section = 'chassis'; corner = ''; subSection = ''; continue;
+        case 'front':
+          if (section !== 'tires') { subSection = 'front'; corner = ''; } continue;
+        case 'rear':
+          if (section !== 'tires') { subSection = 'rear'; corner = ''; } continue;
+        case 'frontarb': case 'arb': case 'antirollbar': case 'anti-roll':
+          section = 'arb'; corner = ''; subSection = 'front'; continue;
+        case 'reararb':
+          section = 'arb'; corner = ''; subSection = 'rear'; continue;
+        case 'aero': case 'aerodynamics':
+          section = 'aero'; corner = ''; subSection = ''; continue;
+        case 'brakes': case 'brake':
+          section = 'brakes'; corner = ''; subSection = ''; continue;
+        case 'geometry': case 'suspension':
+          section = 'geometry'; corner = ''; subSection = ''; continue;
+        case 'drivetrain': case 'differential':
+          section = 'drivetrain'; corner = ''; subSection = ''; continue;
+        case 'pitroad': case 'pit':
+          section = 'pitroad'; corner = ''; subSection = ''; continue;
+        case 'springs':
+          section = 'springs'; corner = ''; subSection = ''; continue;
+        case 'shocks': case 'dampers':
+          section = 'shocks'; corner = ''; subSection = ''; continue;
+        case 'leftfront': case 'left front':
+          corner = 'lf'; continue;
+        case 'rightfront': case 'right front':
+          corner = 'rf'; continue;
+        case 'leftrear': case 'left rear':
+          corner = 'lr'; continue;
+        case 'rightrear': case 'right rear':
+          corner = 'rr'; continue;
+        default:
+          if (cornerMap[lower]) { corner = cornerMap[lower]; continue; }
       }
     }
 
-    // --- Corner headers at any indent (no tab, looks like LeftFront etc) ---
-    const cornerK = cornerMap[lower];
-    if (cornerK && !trimmed.includes('\t') && !trimmed.includes('=')) {
-      corner = cornerK;
-      continue;
-    }
-
-    // --- Field = value line (contains TAB or multiple spaces between field and value) ---
-    // Kapps format: "FieldName\tValue" or "FieldName   Value"
+    // ── Field–value parsing ──
     let fieldName = '', fieldValue = '';
-
     if (trimmed.includes('\t')) {
-      const tabIdx = trimmed.indexOf('\t');
-      fieldName = trimmed.substring(0, tabIdx).trim();
-      fieldValue = trimmed.substring(tabIdx + 1).trim();
+      const ti = trimmed.indexOf('\t');
+      fieldName = trimmed.substring(0, ti).trim();
+      fieldValue = trimmed.substring(ti + 1).trim();
     } else if (trimmed.includes('=')) {
-      const eqIdx = trimmed.indexOf('=');
-      fieldName = trimmed.substring(0, eqIdx).trim();
-      fieldValue = trimmed.substring(eqIdx + 1).trim();
+      const ei = trimmed.indexOf('=');
+      fieldName = trimmed.substring(0, ei).trim();
+      fieldValue = trimmed.substring(ei + 1).trim();
     } else {
-      // Multi-space separation (3+ spaces)
-      const multiSpaceMatch = trimmed.match(/^(\S.*?)\s{3,}(.+)$/);
-      if (multiSpaceMatch) {
-        fieldName = multiSpaceMatch[1].trim();
-        fieldValue = multiSpaceMatch[2].trim();
-      } else {
-        // Single value line – could be subsection header
-        if (trimmed in cornerMap) { corner = cornerMap[trimmed.toLowerCase()]; }
-        continue;
-      }
+      const ms = trimmed.match(/^(\S.*?)\s{3,}(.+)$/);
+      if (ms) { fieldName = ms[1].trim(); fieldValue = ms[2].trim(); }
+      else continue;
     }
 
     const fLower = fieldName.toLowerCase().replace(/\s+/g, '');
     const val = parseKappsValue(fieldValue);
-    if (val === null && fieldValue !== '0') continue;
-
-    const pfx = corner || ''; // e.g. 'lf', 'rf', etc.
+    const pfx = corner || '';
 
     // ─── TIRES ───
     if (section === 'tires' && pfx) {
       if (fLower === 'coldpressure' || fLower === 'cold' || fLower === 'coldpsi') {
-        const psi = kpaToPsi(val);
-        setup[pfx + '_psi'] = psi;
-        setup[pfx + '_cold_kpa'] = val > 50 ? val : null;
+        setup[pfx + '_psi'] = processPressure(fieldValue);
+        setup[pfx + '_psi_raw'] = fieldValue.trim();
       } else if (fLower === 'hotpressure' || fLower === 'hot' || fLower === 'hotpsi') {
-        setup[pfx + '_hot_psi'] = kpaToPsi(val);
-        setup[pfx + '_hot_kpa'] = val > 50 ? val : null;
+        setup[pfx + '_hot_psi'] = processPressure(fieldValue);
       } else if (fLower === 'lasthotpressure' || fLower === 'lasthot') {
-        setup[pfx + '_lasthot_psi'] = kpaToPsi(val);
-      } else if (fLower === 'tempoutside' || fLower === 'tempout' || fLower === 'outsidetemp') {
-        setup[pfx + '_temp_out'] = val;
-      } else if (fLower === 'tempmiddle' || fLower === 'tempmid' || fLower === 'middletemp') {
-        setup[pfx + '_temp_mid'] = val;
-      } else if (fLower === 'tempinside' || fLower === 'tempin' || fLower === 'insidetemp') {
-        setup[pfx + '_temp_in'] = val;
-      } else if (fLower === 'treadoutside' || fLower === 'treadout') {
-        setup[pfx + '_tread_out'] = typeof val === 'string' ? parseFloat(val) : val;
-      } else if (fLower === 'treadmiddle' || fLower === 'treadmid') {
-        setup[pfx + '_tread_mid'] = typeof val === 'string' ? parseFloat(val) : val;
-      } else if (fLower === 'treadinside' || fLower === 'treadin') {
-        setup[pfx + '_tread_in'] = typeof val === 'string' ? parseFloat(val) : val;
-      } else if (fLower === 'wear' || fLower === 'treadwear') {
-        setup[pfx + '_tread_avg'] = typeof val === 'string' ? parseFloat(val) : val;
+        setup[pfx + '_lasthot_psi'] = processPressure(fieldValue);
       }
+      // "LastTempsOMI" or "LastTempsIMO" → O=Outside, M=Middle, I=Inside
+      else if (fLower === 'lasttempomi' || fLower === 'lasttempsomi') {
+        const t = parseTriple(fieldValue);
+        if (t) { setup[pfx+'_temp_out']=t[0]; setup[pfx+'_temp_mid']=t[1]; setup[pfx+'_temp_in']=t[2]; }
+      } else if (fLower === 'lasttempimo' || fLower === 'lasttempsimo') {
+        // IMO = Inside, Middle, Outside (reversed)
+        const t = parseTriple(fieldValue);
+        if (t) { setup[pfx+'_temp_in']=t[0]; setup[pfx+'_temp_mid']=t[1]; setup[pfx+'_temp_out']=t[2]; }
+      }
+      // "TreadRemaining 100%, 100%, 100%"
+      else if (fLower === 'treadremaining' || fLower === 'tread') {
+        const t = parseTriple(fieldValue);
+        if (t) { setup[pfx+'_tread_out']=t[0]; setup[pfx+'_tread_mid']=t[1]; setup[pfx+'_tread_in']=t[2]; }
+      }
+      // Legacy individual fields
+      else if (fLower === 'tempoutside' || fLower === 'tempout') setup[pfx+'_temp_out'] = val;
+      else if (fLower === 'tempmiddle' || fLower === 'tempmid') setup[pfx+'_temp_mid'] = val;
+      else if (fLower === 'tempinside'  || fLower === 'tempin')  setup[pfx+'_temp_in']  = val;
+      else if (fLower === 'treadoutside' || fLower === 'treadout') setup[pfx+'_tread_out'] = val;
+      else if (fLower === 'treadmiddle'  || fLower === 'treadmid') setup[pfx+'_tread_mid'] = val;
+      else if (fLower === 'treadinside'  || fLower === 'treadin')  setup[pfx+'_tread_in']  = val;
     }
 
     // ─── SPRINGS ───
-    if (section === 'springs' || (section === 'chassis' && fLower.includes('spring'))) {
-      const sp = pfx || (fLower.includes('lf') || fLower.includes('leftfront') ? 'lf' :
-                         fLower.includes('rf') || fLower.includes('rightfront') ? 'rf' :
-                         fLower.includes('lr') || fLower.includes('leftrear') ? 'lr' :
-                         fLower.includes('rr') || fLower.includes('rightrear') ? 'rr' : '');
-      if (sp && (fLower === 'springrate' || fLower === 'spring' || fLower.includes('spring'))) {
-        setup[sp + '_spring'] = val;
-      }
-    }
-    if (pfx && (fLower === 'springrate' || fLower === 'spring' || fLower === 'springratein' || fLower === 'rate')) {
+    if (pfx && (fLower === 'springrate' || fLower === 'spring' || fLower === 'rate')) {
       setup[pfx + '_spring'] = val;
+    }
+    if (pfx && fLower === 'shockspringrate') {
+      // Class B/C: front pigtail / shock spring (N/mm)
+      setup[pfx + '_shock_spring'] = val;
+      if (!setup[pfx + '_spring']) setup[pfx + '_spring'] = val; // use as fallback
+    }
+    if (pfx && (fLower === 'springangle' || fLower === 'sprangle')) {
+      setup[pfx + '_spring_angle'] = val;
+    }
+    if (pfx && fLower === 'springperchoffset') {
+      setup[pfx + '_perch'] = val;
+    }
+    if (pfx && (fLower === 'packer' || fLower === 'packers')) {
+      // "12.7 mm shim" or just "12.7"
+      const packerVal = parseFloat(fieldValue);
+      setup[pfx + '_packer'] = isNaN(packerVal) ? val : packerVal;
+    }
+    if (pfx && fLower === 'traveltocoilbind') {
+      setup[pfx + '_coilbind'] = val;
     }
 
     // ─── RIDE HEIGHTS ───
-    if (pfx && (fLower === 'rideheight' || fLower === 'height' || fLower === 'ride')) {
+    if (pfx && fLower === 'rideheight') {
       setup[pfx + '_rh'] = val;
     }
 
     // ─── SHOCKS ───
-    if (pfx && (fLower === 'lowspeedcompression' || fLower === 'lscomp' || fLower === 'compressionlow' || fLower === 'lowcomp')) {
+    if (pfx && (fLower === 'lscompression' || fLower === 'lowspeedcompression' || fLower === 'lscomp')) {
       setup[pfx + '_lsc'] = val;
     }
-    if (pfx && (fLower === 'highspeedcompression' || fLower === 'hscomp' || fLower === 'compressionhigh' || fLower === 'highcomp')) {
+    if (pfx && (fLower === 'hscompression' || fLower === 'highspeedcompression' || fLower === 'hscomp')) {
       setup[pfx + '_hsc'] = val;
     }
-    if (pfx && (fLower === 'lowspeedrebound' || fLower === 'lsreb' || fLower === 'reboundlow' || fLower === 'lowreb' || fLower === 'lowrebound')) {
+    if (pfx && (fLower === 'hscompslope' || fLower === 'highspeedcompslope')) {
+      setup[pfx + '_hsc_slope'] = val;
+    }
+    if (pfx && (fLower === 'lsrebound' || fLower === 'lowspeedrebound' || fLower === 'lsreb')) {
       setup[pfx + '_lsr'] = val;
     }
-    if (pfx && (fLower === 'highspeedrebound' || fLower === 'hsreb' || fLower === 'reboundhigh' || fLower === 'highreb' || fLower === 'highrebound')) {
+    if (pfx && (fLower === 'hsrebound' || fLower === 'highspeedrebound' || fLower === 'hsreb')) {
       setup[pfx + '_hsr'] = val;
     }
-    // Generic compression/rebound by corner
-    if (pfx && fLower === 'compression') setup[pfx + '_lsc'] = val;
-    if (pfx && fLower === 'rebound') setup[pfx + '_lsr'] = val;
+    if (pfx && (fLower === 'hsreboundslope' || fLower === 'highspeedreboundslope')) {
+      setup[pfx + '_hsr_slope'] = val;
+    }
 
     // ─── CAMBER / CASTER / TOE ───
     if (pfx && fLower === 'camber') setup[pfx + '_camber'] = val;
     if (pfx && fLower === 'caster') setup[pfx + '_caster'] = val;
-    if (pfx && fLower === 'toe') setup[pfx + '_toe'] = val;
+    if (pfx && fLower === 'toein') setup[pfx + '_toe'] = val;
+    if (fLower === 'leftreartoeintgt' || fLower === 'leftreartoe' || fLower === 'leftreartoin')
+      setup['lr_toe'] = val;
+    if (fLower === 'rightreartoeintgt' || fLower === 'rightreartoe' || fLower === 'rightreartoin')
+      setup['rr_toe'] = val;
 
-    // ─── CHASSIS WEIGHT ───
-    if (section === 'chassis' || section === '') {
-      if (fLower === 'crossweight' || fLower === 'crossweightpct' || fLower === 'cross') {
-        const cw = typeof val === 'string' ? parseFloat(val) : val;
-        setup.cross_weight = cw;
-      } else if (fLower === 'frontweight' || fLower === 'frontweightpct' || fLower === 'noseweight' || fLower === 'nose') {
-        // Could be raw weight (lbs) or percentage
-        if (typeof val === 'number' && val > 100) {
-          setup.front_weight_lbs = val;
-        } else {
-          setup.nose_weight = val;
-        }
-      } else if (fLower === 'rearweight' || fLower === 'rear') {
-        if (typeof val === 'number' && val > 100) setup.rear_weight_lbs = val;
-      } else if (fLower === 'leftweight' || fLower === 'left') {
-        if (typeof val === 'number' && val > 100) setup.left_weight_lbs = val;
-      } else if (fLower === 'rightweight' || fLower === 'right') {
-        if (typeof val === 'number' && val > 100) setup.right_weight_lbs = val;
-      } else if (fLower === 'lfweight' || fLower === 'leftfrontweight') {
-        setup.lf_corner_weight = val;
-      } else if (fLower === 'rfweight' || fLower === 'rightfrontweight') {
-        setup.rf_corner_weight = val;
-      } else if (fLower === 'lrweight' || fLower === 'leftrearweight') {
-        setup.lr_corner_weight = val;
-      } else if (fLower === 'rrweight' || fLower === 'rightrearweight') {
-        setup.rr_corner_weight = val;
-      } else if (fLower === 'totalweight' || fLower === 'total') {
-        setup.total_weight = val;
-      }
+    // ─── TRACK BAR (on corner) ───
+    if (pfx && (fLower === 'trackbarheight' || fLower === 'trackbar')) {
+      setup[pfx + '_trackbar'] = val;
+      if (pfx === 'lr' || pfx === 'rr') setup.track_bar = val; // generic
     }
 
-    // ─── BRAKES ───
-    if (section === 'brakes' || fLower.includes('brake')) {
-      if (fLower === 'brakebias' || fLower === 'frontbrakebiaspct' || fLower === 'bias') {
+    // ─── TRUCK ARM ───
+    if (pfx && fLower === 'truckarmmount') {
+      setup[pfx + '_truck_arm'] = fieldValue.trim();
+      setup.truck_arm_mount = fieldValue.trim();
+    }
+    if (pfx && fLower === 'truckarmpreload') {
+      setup[pfx + '_truck_arm_preload'] = val;
+      setup.truck_arm_preload = val;
+    }
+
+    // ─── CORNER WEIGHT (in N for B/C, lbs for A) ───
+    if (pfx && (fLower === 'cornerweight' || fLower === 'weight')) {
+      setup[pfx + '_corner_weight'] = val;
+    }
+
+    // ─── CHASSIS FRONT SECTION ───
+    if (subSection === 'front' || section === 'chassis') {
+      if (fLower === 'noseweight' || fLower === 'frontweight') {
+        setup.nose_weight = val;
+      } else if (fLower === 'crossweight') {
+        setup.cross_weight = val;
+      } else if (fLower === 'frontbrakebiaspct' || fLower === 'frontbrakebias' || fLower === 'brakebias') {
         setup.brake_bias = val;
-      } else if (fLower === 'frontmastercylinder' || fLower === 'frontmc' || fLower === 'mastercylinderleft') {
-        setup.f_master_cyl = val;
-      } else if (fLower === 'rearmastercylinder' || fLower === 'rearmc' || fLower === 'mastercylinderright') {
-        setup.r_master_cyl = val;
+      } else if (fLower === 'ballastforward') {
+        setup.ballast_forward = val;
+      } else if (fLower === 'steeringratio') {
+        setup.steering_ratio = val;
+      } else if (fLower === 'steeringoffset') {
+        setup.steering_offset = val;
+      } else if (fLower === 'tapeconfiguration' || fLower === 'tape') {
+        setup.tape_config = fieldValue.trim();
       }
     }
 
-    // ─── ARB ───
-    if (section === 'arb' || fLower.includes('arb') || fLower.includes('antiroll')) {
-      const isRear = fLower.includes('rear') || subSection === 'rear' || (pfx === 'lr' || pfx === 'rr');
-      const isFront = fLower.includes('front') || subSection === 'front' || (pfx === 'lf' || pfx === 'rf');
-      const side = isRear ? 'r' : isFront ? 'f' : (subSection === 'rear' ? 'r' : 'f');
-      if (fLower === 'diameter' || fLower === 'arb' || fLower.includes('diam')) {
-        setup[side + '_arb_diam'] = fieldValue.trim(); // Keep as string for display
-      } else if (fLower === 'arm' || fLower === 'arbarm' || fLower.includes('arm')) {
-        setup[side + '_arb_arm'] = val;
-      } else if (fLower === 'preload' || fLower === 'arbpreload') {
-        setup[side + '_arb_preload'] = val;
-      }
+    // ─── ARB (FrontArb section) ───
+    if (section === 'arb') {
+      const side = subSection === 'rear' ? 'r' : 'f';
+      if (fLower === 'diameter') setup[side + '_arb_diam'] = fieldValue.trim();
+      else if (fLower === 'armasymmetry' || fLower === 'arm') setup[side + '_arb_arm'] = fieldValue.trim();
+      else if (fLower === 'linkslack') setup[side + '_arb_link_slack'] = val;
+      else if (fLower === 'preload') setup[side + '_arb_preload'] = val;
+      else if (fLower === 'attach') setup[side + '_arb_attach'] = val;
+    }
+
+    // ─── REAR SECTION ───
+    if (subSection === 'rear' || section === 'drivetrain') {
+      if (fLower === 'rearendratio') setup.final_drive = val;
+      if (fLower === 'diffpreload') setup.diff_preload = val;
     }
 
     // ─── AERO ───
     if (section === 'aero') {
-      if (fLower === 'rearspoiler' || fLower === 'spoiler' || fLower === 'rearspoilerangle') {
-        setup.rear_spoiler = val;
-      } else if (fLower === 'frontsplitter' || fLower === 'splitter') {
-        setup.front_splitter = val;
-      } else if (fLower === 'trackbar' || fLower === 'trackbarheight') {
-        setup.track_bar = val;
-      }
-    }
-
-    // ─── DRIVETRAIN ───
-    if (section === 'drivetrain') {
-      if (fLower === 'finalratio' || fLower === 'finaldrive' || fLower === 'ratio') {
-        setup.final_drive = val;
-      } else if (fLower === 'diffpreload' || fLower === 'preload' || fLower === 'differential') {
-        setup.diff_preload = val;
-      }
-    }
-
-    // ─── PIT ROAD / PERCH ───
-    if (section === 'pitroad' && pfx) {
-      if (fLower === 'perch' || fLower === 'springperch' || fLower === 'perchoffset') {
-        setup[pfx + '_perch'] = val;
-      }
-    }
-
-    // ─── GEOMETRY (Generic) ───
-    if (section === 'geometry') {
-      if (pfx) {
-        if (fLower === 'camber') setup[pfx + '_camber'] = val;
-        if (fLower === 'caster') setup[pfx + '_caster'] = val;
-        if (fLower === 'toe') setup[pfx + '_toe'] = val;
-      }
-      if (fLower === 'pinionangle' || fLower === 'pinion') setup.pinion_angle = val;
-      if (fLower === 'steeroffset' || fLower === 'steer') setup.steer_offset = val;
+      if (fLower === 'rearspoiler' || fLower === 'spoiler') setup.rear_spoiler = val;
+      if (fLower === 'frontsplitter' || fLower === 'splitter') setup.front_splitter = val;
     }
   }
 
-  // Derive nose weight from front/total if not yet parsed
-  if (!setup.nose_weight && setup.front_weight_lbs && setup.total_weight) {
-    setup.nose_weight = Math.round((setup.front_weight_lbs / setup.total_weight) * 1000) / 10;
-  }
-  if (!setup.cross_weight && setup.lf_corner_weight && setup.rf_corner_weight && setup.lr_corner_weight && setup.rr_corner_weight) {
-    const diag = setup.lf_corner_weight + setup.rr_corner_weight;
-    const total = setup.lf_corner_weight + setup.rf_corner_weight + setup.lr_corner_weight + setup.rr_corner_weight;
-    setup.cross_weight = Math.round((diag / total) * 1000) / 10;
-    if (!setup.total_weight) setup.total_weight = total;
-    if (!setup.nose_weight) {
-      const front = setup.lf_corner_weight + setup.rf_corner_weight;
-      setup.nose_weight = Math.round((front / total) * 1000) / 10;
+  // ── Post-processing ──
+  // Derive nose weight from corner weights
+  const cw_lf = setup.lf_corner_weight, cw_rf = setup.rf_corner_weight,
+        cw_lr = setup.lr_corner_weight, cw_rr = setup.rr_corner_weight;
+  if (!setup.nose_weight && cw_lf && cw_rf && cw_lr && cw_rr) {
+    const total = cw_lf + cw_rf + cw_lr + cw_rr;
+    setup.nose_weight = Math.round(((cw_lf + cw_rf) / total) * 1000) / 10;
+    if (!setup.cross_weight) {
+      setup.cross_weight = Math.round(((cw_lf + cw_rr) / total) * 1000) / 10;
     }
+    setup.total_weight = total;
   }
+
+  // Store class-specific unit labels for display
+  setup.unit_pressure = isBorC ? 'kPa' : 'PSI';
+  setup.unit_spring = isBorC ? 'N/mm' : 'lbs/in';
+  setup.unit_height = isBorC ? 'mm' : 'in';
+  setup.unit_weight = isBorC ? 'N' : 'lbs';
 
   return setup;
 }
@@ -670,52 +1078,81 @@ window.setSetupActive = function() {
 };
 
 window.analyzeManualSetup = function() {
+  const cls = window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+
+  // Helper to safely read a number field
+  const num = id => { const el = document.getElementById(id); return el ? parseFloat(el.value) : NaN; };
+  const str = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+
   const setup = {
-    name: document.getElementById('setup-name-input').value || 'Setup Manual',
+    name: str('setup-name-input') || 'Setup Manual',
     timestamp: new Date().toISOString(),
-    lf_psi: parseFloat(document.getElementById('mf-lf-psi').value),
-    rf_psi: parseFloat(document.getElementById('mf-rf-psi').value),
-    lr_psi: parseFloat(document.getElementById('mf-lr-psi').value),
-    rr_psi: parseFloat(document.getElementById('mf-rr-psi').value),
-    lf_spring: parseFloat(document.getElementById('mf-lf-spring').value),
-    rf_spring: parseFloat(document.getElementById('mf-rf-spring').value),
-    lr_spring: parseFloat(document.getElementById('mf-lr-spring').value),
-    rr_spring: parseFloat(document.getElementById('mf-rr-spring').value),
-    lf_rh: parseFloat(document.getElementById('mf-lf-rh').value),
-    rf_rh: parseFloat(document.getElementById('mf-rf-rh').value),
-    lr_rh: parseFloat(document.getElementById('mf-lr-rh').value),
-    rr_rh: parseFloat(document.getElementById('mf-rr-rh').value),
-    nose_weight: parseFloat(document.getElementById('mf-nose').value),
-    cross_weight: parseFloat(document.getElementById('mf-cross').value),
-    brake_bias: parseFloat(document.getElementById('mf-bb').value),
-    lf_camber: parseFloat(document.getElementById('mf-lf-camber').value),
-    rf_camber: parseFloat(document.getElementById('mf-rf-camber').value),
-    lf_caster: parseFloat(document.getElementById('mf-lf-caster').value),
-    rf_caster: parseFloat(document.getElementById('mf-rf-caster').value),
-    lf_toe: parseFloat(document.getElementById('mf-lf-toe').value),
-    rf_toe: parseFloat(document.getElementById('mf-rf-toe').value),
-    lr_camber: parseFloat(document.getElementById('mf-lr-camber').value),
-    rr_camber: parseFloat(document.getElementById('mf-rr-camber').value),
-    f_arb_diam: document.getElementById('mf-f-arb-diam').value,
-    f_arb_arm: parseInt(document.getElementById('mf-f-arb-arm').value),
-    r_arb_diam: document.getElementById('mf-r-arb-diam').value,
-    r_arb_arm: parseInt(document.getElementById('mf-r-arb-arm').value),
-    lf_lsc: parseFloat(document.getElementById('mf-lf-lsc').value),
-    rf_lsc: parseFloat(document.getElementById('mf-rf-lsc').value),
-    lr_lsc: parseFloat(document.getElementById('mf-lr-lsc').value),
-    rr_lsc: parseFloat(document.getElementById('mf-rr-lsc').value),
-    lf_hsc: parseFloat(document.getElementById('mf-lf-hsc').value),
-    rf_hsc: parseFloat(document.getElementById('mf-rf-hsc').value),
-    lr_hsc: parseFloat(document.getElementById('mf-lr-hsc').value),
-    rr_hsc: parseFloat(document.getElementById('mf-rr-hsc').value),
-    lf_lsr: parseFloat(document.getElementById('mf-lf-lsr').value),
-    rf_lsr: parseFloat(document.getElementById('mf-rf-lsr').value),
-    lr_lsr: parseFloat(document.getElementById('mf-lr-lsr').value),
-    rr_lsr: parseFloat(document.getElementById('mf-rr-lsr').value),
+    source: 'manual',
+    carClass: cls,
+    unit_pressure: isBorC ? 'kPa' : 'PSI',
+    unit_spring:   isBorC ? 'N/mm' : 'lbs/in',
+    unit_height:   isBorC ? 'mm' : 'in',
+    unit_weight:   isBorC ? 'N' : 'lbs',
+    lf_psi: num('mf-lf-psi'),
+    rf_psi: num('mf-rf-psi'),
+    lr_psi: num('mf-lr-psi'),
+    rr_psi: num('mf-rr-psi'),
+    lf_spring: num('mf-lf-spring'),
+    rf_spring: num('mf-rf-spring'),
+    lr_spring: num('mf-lr-spring'),
+    rr_spring: num('mf-rr-spring'),
+    lf_rh: num('mf-lf-rh'),
+    rf_rh: num('mf-rf-rh'),
+    lr_rh: num('mf-lr-rh'),
+    rr_rh: num('mf-rr-rh'),
+    nose_weight: num('mf-nose'),
+    cross_weight: num('mf-cross'),
+    brake_bias: num('mf-bb'),
+    lf_camber: num('mf-lf-camber'),
+    rf_camber: num('mf-rf-camber'),
+    lf_caster: num('mf-lf-caster'),
+    rf_caster: num('mf-rf-caster'),
+    lf_toe: num('mf-lf-toe'),
+    rf_toe: num('mf-rf-toe'),
+    lr_camber: num('mf-lr-camber'),
+    rr_camber: num('mf-rr-camber'),
+    f_arb_diam: str('mf-f-arb-diam'),
+    f_arb_arm: parseInt(str('mf-f-arb-arm')) || undefined,
+    r_arb_diam: str('mf-r-arb-diam'),
+    r_arb_arm: parseInt(str('mf-r-arb-arm')) || undefined,
+    lf_lsc: num('mf-lf-lsc'), rf_lsc: num('mf-rf-lsc'),
+    lr_lsc: num('mf-lr-lsc'), rr_lsc: num('mf-rr-lsc'),
+    lf_hsc: num('mf-lf-hsc'), rf_hsc: num('mf-rf-hsc'),
+    lr_hsc: num('mf-lr-hsc'), rr_hsc: num('mf-rr-hsc'),
+    lf_lsr: num('mf-lf-lsr'), rf_lsr: num('mf-rf-lsr'),
+    lr_lsr: num('mf-lr-lsr'), rr_lsr: num('mf-rr-lsr'),
   };
 
+  // B/C extra fields
+  if (isBorC) {
+    setup.lf_shock_spring = num('mf-lf-shock-spring') || undefined;
+    setup.rf_shock_spring = num('mf-rf-shock-spring') || undefined;
+    setup.lf_packer = num('mf-lf-packer') || undefined;
+    setup.rf_packer = num('mf-rf-packer') || undefined;
+    setup.lr_trackbar = num('mf-lr-trackbar') || undefined;
+    setup.rr_trackbar = num('mf-rr-trackbar') || undefined;
+    setup.truck_arm_mount = str('mf-truck-arm-mount') || undefined;
+    setup.truck_arm_preload = num('mf-truck-arm-preload') || undefined;
+    setup.ballast_forward = num('mf-ballast-forward') || undefined;
+    setup.steering_ratio = num('mf-steering-ratio') || undefined;
+    setup.steering_offset = num('mf-steering-offset') || undefined;
+    setup.final_drive = num('mf-rear-end-ratio') || undefined;
+    setup.f_arb_link_slack = num('mf-f-arb-link-slack') || undefined;
+    setup.f_arb_preload = num('mf-f-arb-preload') || undefined;
+    setup.tape_config = str('mf-tape-config') || undefined;
+    if (cls === 'C') {
+      setup.lf_spring_angle = num('mf-lf-spring-angle') || undefined;
+      setup.rf_spring_angle = num('mf-rf-spring-angle') || undefined;
+    }
+  }
+
   AppState.currentSetup = setup;
-  setup.source = 'manual';
   renderSetupAnalysis(setup);
   updateDashboard();
   updateSetupStatusUI();
@@ -730,6 +1167,15 @@ function renderSetupAnalysis(setup) {
   document.getElementById('analysis-badge').style.display = 'inline';
 
   const hasKappsData = setup.source === 'kapps';
+  const cls = setup.carClass || window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+  const uPres = isBorC ? 'kPa' : 'PSI';
+  const uSpring = isBorC ? 'N/mm' : 'lbs/in';
+  const uHeight = isBorC ? 'mm' : 'in';
+  const uWeight = isBorC ? 'N' : 'lbs';
+
+  // Class badge for analysis sections
+  const classBadge = isBorC ? `<span class="class-badge-inline badge-${cls.toLowerCase()}">${cls}</span>` : '';
 
   // Helper: render a param cell
   const pCell = (label, value, unit, cssClass) => {
@@ -743,15 +1189,15 @@ function renderSetupAnalysis(setup) {
   // ── TIRES: Cold Pressure ──
   let tiresSection = `
   <div class="analysis-section">
-    <div class="as-header">🛞 Pressões de Pneus – Fria (Cold PSI)</div>
+    <div class="as-header">🛞 Pressões de Pneus – Fria (Cold ${uPres}) ${classBadge}</div>
     <div class="as-content">
       <div class="param-grid">
-        ${pCell('LF Cold', setup.lf_psi, ' PSI', getPsiStatus(setup.lf_psi,'LF'))}
-        ${pCell('RF Cold', setup.rf_psi, ' PSI', getPsiStatus(setup.rf_psi,'RF'))}
-        ${pCell('LR Cold', setup.lr_psi, ' PSI', getPsiStatus(setup.lr_psi,'LR'))}
-        ${pCell('RR Cold', setup.rr_psi, ' PSI', getPsiStatus(setup.rr_psi,'RR'))}
+        ${pCell('LF Cold', setup.lf_psi, ' '+uPres, getPsiStatus(setup.lf_psi,'LF',cls))}
+        ${pCell('RF Cold', setup.rf_psi, ' '+uPres, getPsiStatus(setup.rf_psi,'RF',cls))}
+        ${pCell('LR Cold', setup.lr_psi, ' '+uPres, getPsiStatus(setup.lr_psi,'LR',cls))}
+        ${pCell('RR Cold', setup.rr_psi, ' '+uPres, getPsiStatus(setup.rr_psi,'RR',cls))}
       </div>
-      <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzePressures(setup)}</div>
+      <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzePressures(setup,cls)}</div>
     </div>
   </div>`;
 
@@ -838,18 +1284,26 @@ function renderSetupAnalysis(setup) {
   </div>`;
   }
 
-  // ── SPRINGS ──
-  const springsSection = `
+  // ── SPRINGS (handle B/C shock spring vs rear spring) ──
+  const springLabelLF = (isBorC && setup.lf_shock_spring) ? 'LF Shock Spring' : 'LF Spring';
+  const springLabelRF = (isBorC && setup.rf_shock_spring) ? 'RF Shock Spring' : 'RF Spring';
+  const lf_s = setup.lf_shock_spring || setup.lf_spring;
+  const rf_s = setup.rf_shock_spring || setup.rf_spring;
+  let springsSection = `
   <div class="analysis-section">
-    <div class="as-header">🌀 Molas</div>
+    <div class="as-header">🌀 Molas ${classBadge}</div>
     <div class="as-content">
       <div class="param-grid">
-        ${pCell('LF Spring', setup.lf_spring, ' lbs')}
-        ${pCell('RF Spring', setup.rf_spring, ' lbs')}
-        ${pCell('LR Spring', setup.lr_spring, ' lbs')}
-        ${pCell('RR Spring', setup.rr_spring, ' lbs')}
+        ${pCell(springLabelLF, lf_s, ' '+uSpring)}
+        ${pCell(springLabelRF, rf_s, ' '+uSpring)}
+        ${pCell('LR Spring', setup.lr_spring, ' '+uSpring)}
+        ${pCell('RR Spring', setup.rr_spring, ' '+uSpring)}
+        ${(isBorC && setup.lf_packer !== undefined) ? pCell('LF Packer', setup.lf_packer, ' mm') : ''}
+        ${(isBorC && setup.rf_packer !== undefined) ? pCell('RF Packer', setup.rf_packer, ' mm') : ''}
+        ${(isBorC && setup.lf_spring_angle !== undefined) ? pCell('LF Spring Angle', setup.lf_spring_angle, '°') : ''}
+        ${(isBorC && setup.rf_spring_angle !== undefined) ? pCell('RF Spring Angle', setup.rf_spring_angle, '°') : ''}
       </div>
-      <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzeSprings(setup)}</div>
+      <div class="mt-1" style="font-size:0.78rem; color:var(--text-secondary)">${analyzeSprings(setup,cls)}</div>
     </div>
   </div>`;
 
@@ -859,11 +1313,16 @@ function renderSetupAnalysis(setup) {
     <div class="as-header">📏 Ride Heights</div>
     <div class="as-content">
       <div class="param-grid">
-        ${pCell('LF RH', setup.lf_rh, '"')}
-        ${pCell('RF RH', setup.rf_rh, '"')}
-        ${pCell('LR RH', setup.lr_rh, '"')}
-        ${pCell('RR RH', setup.rr_rh, '"')}
+        ${pCell('LF RH', setup.lf_rh, ' '+uHeight)}
+        ${pCell('RF RH', setup.rf_rh, ' '+uHeight)}
+        ${pCell('LR RH', setup.lr_rh, ' '+uHeight)}
+        ${pCell('RR RH', setup.rr_rh, ' '+uHeight)}
       </div>
+      ${isBorC && (setup.lr_trackbar || setup.rr_trackbar) ? `
+      <div class="param-grid" style="margin-top:0.5rem">
+        ${setup.lr_trackbar ? pCell('LR Track Bar', setup.lr_trackbar, ' mm') : ''}
+        ${setup.rr_trackbar ? pCell('RR Track Bar', setup.rr_trackbar, ' mm') : ''}
+      </div>` : ''}
     </div>
   </div>` : '';
 
@@ -905,14 +1364,14 @@ function renderSetupAnalysis(setup) {
     );
     weightSection += `
       <div style="margin-top:0.8rem">
-        <div style="font-size:0.75rem;color:var(--gold);font-weight:700;margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em">Pesos por Canto (lbs) <span class="kapps-badge">KAPPS</span></div>
+        <div style="font-size:0.75rem;color:var(--gold);font-weight:700;margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em">Pesos por Canto (${uWeight}) <span class="kapps-badge">KAPPS</span></div>
         <div class="param-grid">
-          ${pCell('LF', setup.lf_corner_weight, ' lbs')}
-          ${pCell('RF', setup.rf_corner_weight, ' lbs')}
-          ${pCell('LR', setup.lr_corner_weight, ' lbs')}
-          ${pCell('RR', setup.rr_corner_weight, ' lbs')}
+          ${pCell('LF', setup.lf_corner_weight, ' '+uWeight)}
+          ${pCell('RF', setup.rf_corner_weight, ' '+uWeight)}
+          ${pCell('LR', setup.lr_corner_weight, ' '+uWeight)}
+          ${pCell('RR', setup.rr_corner_weight, ' '+uWeight)}
         </div>
-        ${total ? `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.4rem">Peso Total: ${total} lbs · Frente: ${setup.front_weight_lbs||'—'} lbs · Traseira: ${setup.rear_weight_lbs||'—'} lbs · Esquerda: ${setup.left_weight_lbs||'—'} lbs</div>` : ''}
+        ${total ? `<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.4rem">Peso Total: ${total} ${uWeight}</div>` : ''}
       </div>`;
   }
   weightSection += `</div></div>`;
@@ -964,34 +1423,58 @@ function renderSetupAnalysis(setup) {
   // ── ARB ──
   let arbSection = '';
   if (setup.f_arb_diam || setup.f_arb_arm || setup.r_arb_diam || setup.r_arb_arm) {
+    const arbPreloadUnit = isBorC ? ' Nm' : ' lbs';
+    const arbDiamUnit = isBorC ? ' mm' : '"';
     arbSection = `
   <div class="analysis-section">
-    <div class="as-header">🔗 Anti-Roll Bar (ARB)</div>
+    <div class="as-header">🔗 Anti-Roll Bar (ARB) ${classBadge}</div>
     <div class="as-content">
       <div class="param-grid">
-        ${pCell('Front Diam', setup.f_arb_diam, '"')}
+        ${pCell('Front Diam', setup.f_arb_diam, arbDiamUnit)}
         ${pCell('Front Arm', setup.f_arb_arm ? 'P'+setup.f_arb_arm : null, '')}
-        ${setup.f_arb_preload !== undefined ? pCell('Front Preload', setup.f_arb_preload, ' lbs') : ''}
-        ${pCell('Rear Diam', setup.r_arb_diam, '"')}
-        ${pCell('Rear Arm', setup.r_arb_arm ? 'P'+setup.r_arb_arm : null, '')}
-        ${setup.r_arb_preload !== undefined ? pCell('Rear Preload', setup.r_arb_preload, ' lbs') : ''}
+        ${setup.f_arb_link_slack !== undefined ? pCell('Link Slack', setup.f_arb_link_slack, ' mm') : ''}
+        ${setup.f_arb_preload !== undefined ? pCell('Front Preload', setup.f_arb_preload, arbPreloadUnit) : ''}
+        ${setup.f_arb_attach !== undefined ? pCell('ARB Attach', setup.f_arb_attach, '') : ''}
+        ${setup.r_arb_diam ? pCell('Rear Diam', setup.r_arb_diam, arbDiamUnit) : ''}
+        ${setup.r_arb_arm ? pCell('Rear Arm', 'P'+setup.r_arb_arm, '') : ''}
+        ${setup.r_arb_preload !== undefined ? pCell('Rear Preload', setup.r_arb_preload, arbPreloadUnit) : ''}
       </div>
+    </div>
+  </div>`;
+  }
+
+  // ── TRUCK ARM (B/C specific) ──
+  let truckArmSection = '';
+  if (isBorC && (setup.truck_arm_mount || setup.truck_arm_preload !== undefined)) {
+    truckArmSection = `
+  <div class="analysis-section">
+    <div class="as-header">🔧 Truck Arm ${classBadge}</div>
+    <div class="as-content">
+      <div class="param-grid">
+        ${setup.truck_arm_mount ? pCell('Mount Position', setup.truck_arm_mount, '') : ''}
+        ${setup.truck_arm_preload !== undefined ? pCell('Preload', setup.truck_arm_preload, ' Nm') : ''}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.4rem">Mount Top = mais rotação, menos grip traseiro. Mount Bottom = mais grip, menos rotação.</div>
     </div>
   </div>`;
   }
 
   // ── DRIVETRAIN ──
   let driveSection = '';
-  if (setup.final_drive || setup.diff_preload) {
+  if (setup.final_drive || setup.diff_preload || setup.ballast_forward !== undefined || setup.steering_ratio) {
     driveSection = `
   <div class="analysis-section">
-    <div class="as-header">⚙️ Drivetrain</div>
+    <div class="as-header">⚙️ Drivetrain & Chassis ${classBadge}</div>
     <div class="as-content">
       <div class="param-grid">
-        ${setup.final_drive ? pCell('Final Drive', setup.final_drive, '') : ''}
-        ${setup.diff_preload !== undefined ? pCell('Diff Preload', setup.diff_preload, ' lbs') : ''}
-        ${setup.f_master_cyl ? pCell('Front M.C.', setup.f_master_cyl, '"') : ''}
-        ${setup.r_master_cyl ? pCell('Rear M.C.', setup.r_master_cyl, '"') : ''}
+        ${setup.final_drive ? pCell('Rear End Ratio', setup.final_drive, ':1') : ''}
+        ${setup.diff_preload !== undefined ? pCell('Diff Preload', setup.diff_preload, isBorC ? ' Nm' : ' lbs') : ''}
+        ${setup.ballast_forward !== undefined ? pCell('Ballast Forward', setup.ballast_forward, ' mm') : ''}
+        ${setup.steering_ratio ? pCell('Steering Ratio', setup.steering_ratio, '') : ''}
+        ${setup.steering_offset !== undefined ? pCell('Steering Offset', setup.steering_offset, '°') : ''}
+        ${setup.tape_config ? pCell('Tape Config', setup.tape_config, '') : ''}
+        ${setup.f_master_cyl ? pCell('Front M.C.', setup.f_master_cyl, isBorC ? ' mm' : '"') : ''}
+        ${setup.r_master_cyl ? pCell('Rear M.C.', setup.r_master_cyl, isBorC ? ' mm' : '"') : ''}
       </div>
     </div>
   </div>`;
@@ -1022,7 +1505,7 @@ function renderSetupAnalysis(setup) {
     </div>
   </div>`;
 
-  result.innerHTML = tiresSection + springsSection + rhSection + weightSection + geoSection + shocksSection + arbSection + driveSection + aeroSection + diagSection;
+  result.innerHTML = tiresSection + springsSection + rhSection + weightSection + geoSection + shocksSection + arbSection + truckArmSection + driveSection + aeroSection + diagSection;
 }
 
 function analyzeBalance(setup) {
@@ -1033,126 +1516,218 @@ function analyzeBalance(setup) {
   return score;
 }
 
-function getPsiStatus(psi, corner) {
+function getPsiStatus(psi, corner, cls) {
   if (!psi) return '';
-  const ranges = { LF: [25, 33], RF: [25, 35], LR: [18, 28], RR: [20, 30] };
-  const [lo, hi] = ranges[corner];
+  cls = cls || window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+  let ranges;
+  if (isBorC) {
+    // B/C: values in kPa. LF/LR ~172-179 kPa, RF/RR ~310 kPa
+    ranges = { LF:[150,215], RF:[280,345], LR:[150,215], RR:[280,345] };
+  } else {
+    ranges = { LF:[25,33], RF:[25,35], LR:[18,28], RR:[20,30] };
+  }
+  const [lo, hi] = ranges[corner] || [0, 9999];
   if (psi < lo) return 'warn';
   if (psi > hi) return 'warn';
   return 'ok';
 }
 
-function analyzePressures(setup) {
+function analyzePressures(setup, cls) {
+  cls = cls || setup.carClass || window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
   const notes = [];
-  if (setup.rf_psi && setup.lf_psi) {
-    const diff = setup.rf_psi - setup.lf_psi;
-    if (diff > 4) notes.push('⚠️ RF muito maior que LF – pode induzir loose');
-    if (diff < 0) notes.push('⚠️ LF maior que RF – incomum em oval, verificar');
+  if (isBorC) {
+    // B/C: kPa values. RF/RR should be ~310, LF/LR ~172-179
+    if (setup.rf_psi && setup.lf_psi) {
+      if (setup.lf_psi > 220) notes.push('⚠️ LF muito alta para oval – verifique configuração');
+      if (setup.rf_psi < 250) notes.push('⚠️ RF muito baixa – RF deve estar ~310 kPa em oval');
+    }
+    if (setup.rr_psi && setup.lr_psi) {
+      const diff = Math.abs(setup.rr_psi - setup.rf_psi);
+      if (diff > 30) notes.push('⚠️ Grande diferença RF/RR – verifique posição lateral do carro');
+    }
+    if (notes.length === 0) notes.push('✅ Pressões dentro de faixas normais para Classe ' + cls);
+  } else {
+    if (setup.rf_psi && setup.lf_psi) {
+      const diff = setup.rf_psi - setup.lf_psi;
+      if (diff > 4) notes.push('⚠️ RF muito maior que LF – pode induzir loose');
+      if (diff < 0) notes.push('⚠️ LF maior que RF – incomum em oval, verificar');
+    }
+    if (setup.rr_psi && setup.rf_psi) {
+      const diff = setup.rf_psi - setup.rr_psi;
+      if (diff < 2) notes.push('💡 RF e RR similares – RF geralmente deve ser 2-4 PSI maior no equilíbrio');
+    }
+    if (notes.length === 0) notes.push('✅ Pressões dentro de faixas normais para oval');
   }
-  if (setup.rr_psi && setup.rf_psi) {
-    const diff = setup.rf_psi - setup.rr_psi;
-    if (diff < 2) notes.push('💡 RF e RR similares – RF geralmente deve ser 2-4 PSI maior no equilíbrio');
-  }
-  if (notes.length === 0) notes.push('✅ Pressões dentro de faixas normais para oval');
   return notes.join('<br>');
 }
 
-function analyzeSprings(setup) {
+function analyzeSprings(setup, cls) {
+  cls = cls || setup.carClass || window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
   const notes = [];
-  if (setup.rf_spring && setup.lf_spring) {
-    if (setup.rf_spring < setup.lf_spring) notes.push('⚠️ RF macia que LF – incomum, pode causar loose severo');
-    const diff = setup.rf_spring - setup.lf_spring;
-    if (diff > 200) notes.push('💡 Grande diferença RF/LF – carro provavelmente tight');
+  const lf_s = setup.lf_shock_spring || setup.lf_spring;
+  const rf_s = setup.rf_shock_spring || setup.rf_spring;
+  if (isBorC) {
+    // B/C: values in N/mm. Typical front ~1575 N/mm (pigtail), rear ~35-131 N/mm
+    if (rf_s && lf_s) {
+      if (rf_s < lf_s * 0.8) notes.push('⚠️ RF muito mais macia que LF (B/C) – pode causar loose severo');
+    }
+    if (setup.rr_spring && setup.lr_spring) {
+      if (setup.rr_spring > setup.lr_spring * 3) notes.push('💡 RR muito mais rígida que LR – monitore tight exit');
+      if (setup.lr_spring > setup.rr_spring) notes.push('💡 LR mais rígida que RR – aumenta tight center em B/C');
+    }
+    const physicsNote = cls === 'C'
+      ? 'ℹ️ Classe C: molas pigtail de dois estágios. Spring Angle afeta taxa efetiva progressiva.'
+      : 'ℹ️ Classe B: shock spring na frente (N/mm). Traseiras lineares afetam atitude da carroceria.';
+    notes.push(physicsNote);
+  } else {
+    if (rf_s && lf_s) {
+      if (rf_s < lf_s) notes.push('⚠️ RF macia que LF – incomum, pode causar loose severo');
+      const diff = rf_s - lf_s;
+      if (diff > 200) notes.push('💡 Grande diferença RF/LF – carro provavelmente tight');
+    }
+    if (setup.rr_spring && setup.lr_spring) {
+      if (setup.rr_spring < setup.lr_spring) notes.push('💡 RR mais macia que LR – pode causar loose exit');
+      const frontAvg = ((lf_s||550) + (rf_s||600)) / 2;
+      const rearAvg = ((setup.lr_spring||175) + (setup.rr_spring||225)) / 2;
+      if (rearAvg > frontAvg * 0.5) notes.push('⚠️ Molas traseiras relativamente rígidas – monitore loose');
+    }
+    if (notes.length === 0) notes.push('✅ Relação de molas dentro do esperado para oval');
   }
-  if (setup.rr_spring && setup.lr_spring) {
-    if (setup.rr_spring < setup.lr_spring) notes.push('💡 RR mais macia que LR – pode causar loose exit');
-    const frontAvg = ((setup.lf_spring||550) + (setup.rf_spring||600)) / 2;
-    const rearAvg = ((setup.lr_spring||175) + (setup.rr_spring||225)) / 2;
-    if (rearAvg > frontAvg * 0.5) notes.push('⚠️ Molas traseiras relativamente rígidas – monitore loose');
-  }
-  if (notes.length === 0) notes.push('✅ Relação de molas dentro do esperado para oval');
   return notes.join('<br>');
 }
 
 function generateAutoSuggestions(setup) {
   const suggestions = [];
+  const cls = setup.carClass || window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+  const tips = window.CLASS_CONFIGS?.[cls]?.tips || {};
 
-  // Analyze tire pressures balance
-  if (setup.rf_psi && setup.rr_psi) {
-    const rfPsi = setup.rf_psi, rrPsi = setup.rr_psi;
-    if (rfPsi < rrPsi) {
-      suggestions.push({
-        icon: '🔴', title: 'Alerta: RF PSI menor que RR PSI',
-        detail: `RF (${rfPsi}) < RR (${rrPsi}): Configuração incomum. RR alto causa loose crônico. Considere aumentar RF ou reduzir RR.`
-      });
-    }
-  }
-
-  // Analyze spring balance
-  if (setup.lf_spring && setup.rf_spring && setup.lr_spring && setup.rr_spring) {
-    const springBalance = (setup.rf_spring - setup.lf_spring) / (setup.lf_spring + setup.rf_spring) * 100;
-    if (springBalance > 10) {
-      suggestions.push({
-        icon: '🔵', title: 'Tendência TIGHT: RF muito rígida vs LF',
-        detail: `RF (${setup.rf_spring}) muito maior que LF (${setup.lf_spring}). Setup tende para tight geral. Reduza RF spring ou aumente LF spring.`
-      });
+  if (isBorC) {
+    // ─── B/C: kPa-based pressure checks ───
+    if (setup.lf_psi && setup.rf_psi) {
+      // In B/C, LF/LR should be ~172-179 kPa and RF/RR should be ~310 kPa
+      if (setup.lf_psi > 240) {
+        suggestions.push({ icon: '⚠️', title: 'LF PSI alta demais (B/C)',
+          detail: `LF ${setup.lf_psi} kPa é inusualmente alta para lateral esquerda. Verifique se o valor está correto.` });
+      }
+      if (setup.rf_psi < 250 && setup.rf_psi > 0) {
+        suggestions.push({ icon: '🔵', title: 'RF PSI baixa para oval (B/C)',
+          detail: `RF ${setup.rf_psi} kPa abaixo do normal (~310 kPa). Dianteiro direito tende ao tight. Aumente RF para 290-320 kPa.` });
+      }
     }
 
-    const rearStiff = (setup.rr_spring + setup.lr_spring) / 2;
-    const frontStiff = (setup.rf_spring + setup.lf_spring) / 2;
-    if (rearStiff > frontStiff * 0.45) {
-      suggestions.push({
-        icon: '🔴', title: 'Traseiras relativamente firmes',
-        detail: `Média traseiras (${rearStiff.toFixed(0)}) vs dianteiras (${frontStiff.toFixed(0)}). Relação incomum – monitore loose em aceleração.`
-      });
+    // ─── B/C: Spring balance checks ───
+    const lf_s = setup.lf_shock_spring || setup.lf_spring;
+    const rf_s = setup.rf_shock_spring || setup.rf_spring;
+    if (lf_s && rf_s && setup.lr_spring && setup.rr_spring) {
+      if (setup.lr_spring > setup.rr_spring) {
+        suggestions.push({ icon: '🔵', title: 'LR mais rígida que RR (B/C)',
+          detail: `LR (${setup.lr_spring}) > RR (${setup.rr_spring}). Em ${cls}, LR rígida aumenta tight center. LR deve ser igual ou mais macia que RR.` });
+      }
+      if (setup.rr_spring > setup.lr_spring * 4) {
+        suggestions.push({ icon: '🔴', title: 'RR muito rígida vs LR (B/C)',
+          detail: `RR (${setup.rr_spring} N/mm) muito maior que LR (${setup.lr_spring} N/mm). Pode causar loose severo em aceleração.` });
+      }
     }
-  }
 
-  // Brake bias
-  if (setup.brake_bias) {
-    if (setup.brake_bias > 58) {
-      suggestions.push({
-        icon: '⚠️', title: 'Brake Bias muito alto dianteiro',
-        detail: `${setup.brake_bias}% dianteiro é muito alto. Risco de trava do dianteiro. Reduza para 54-57%.`
-      });
+    // ─── B/C: Brake bias ───
+    if (setup.brake_bias) {
+      const bbIdeal = tips.brake_bias?.ideal || [60, 67];
+      if (setup.brake_bias > bbIdeal[1] + 2) {
+        suggestions.push({ icon: '⚠️', title: 'Brake Bias muito alto (B/C)',
+          detail: `${setup.brake_bias}% é alto para Classe ${cls}. Recomendado ${bbIdeal[0]}-${bbIdeal[1]}%. Risco de trava dianteira.` });
+      }
+      if (setup.brake_bias < bbIdeal[0] - 3) {
+        suggestions.push({ icon: '⚠️', title: 'Brake Bias muito traseiro (B/C)',
+          detail: `${setup.brake_bias}% é baixo para Classe ${cls}. Recomendado ${bbIdeal[0]}-${bbIdeal[1]}%. Risco de trava traseira.` });
+      }
     }
-    if (setup.brake_bias < 51) {
-      suggestions.push({
-        icon: '⚠️', title: 'Brake Bias muito traseiro',
-        detail: `${setup.brake_bias}% é muito baixo para oval. Risco de travamento traseiro e instabilidade. Aumente para 53-56%.`
-      });
-    }
-  }
 
-  // Cross weight
-  if (setup.cross_weight) {
-    if (setup.cross_weight < 48.5) {
-      suggestions.push({
-        icon: '🔴', title: 'Cross Weight muito baixo',
-        detail: `${setup.cross_weight}% cross weight. Carro pode estar muito loose. Range ideal: 49.5-51.5% para intermediates.`
-      });
+    // ─── B/C: Cross weight ───
+    if (setup.cross_weight) {
+      const cwIdeal = tips.cross_weight?.ideal || [49.5, 52.5];
+      if (setup.cross_weight < cwIdeal[0] - 1) {
+        suggestions.push({ icon: '🔴', title: 'Cross Weight baixo (B/C)',
+          detail: `${setup.cross_weight}% cross weight para Classe ${cls}. Ideal: ${cwIdeal[0]}-${cwIdeal[1]}%. Tendência de loose geral.` });
+      }
+      if (setup.cross_weight > cwIdeal[1] + 0.5) {
+        suggestions.push({ icon: '🔵', title: 'Cross Weight alto (B/C)',
+          detail: `${setup.cross_weight}% pode causar tight. Ideal para Classe ${cls}: ${cwIdeal[0]}-${cwIdeal[1]}%.` });
+      }
     }
-    if (setup.cross_weight > 52) {
-      suggestions.push({
-        icon: '🔵', title: 'Cross Weight alto',
-        detail: `${setup.cross_weight}% pode causar tight crônico em intermediates. Considere reduzir para 50-51%.`
-      });
-    }
-  }
 
-  // RF camber
-  if (setup.rf_camber) {
-    if (setup.rf_camber > -2) {
-      suggestions.push({
-        icon: '⚠️', title: 'RF Camber insuficiente',
-        detail: `RF Camber de ${setup.rf_camber}° é muito pouco para oval. Recomendado: -3.5° a -6.0°. Sem câmbio adequado, desgaste no exterior do RF.`
-      });
+    // ─── B/C: Truck arm ───
+    if (setup.truck_arm_mount === 'top') {
+      suggestions.push({ icon: '🔴', title: 'Truck Arm no topo (B/C)',
+        detail: 'Mount no topo reduz grip traseiro e aumenta anti-squat. Cuidado com loose em aceleração em pistas de médio/curto comprimento.' });
     }
-    if (setup.rf_camber < -7) {
-      suggestions.push({
-        icon: '⚠️', title: 'RF Camber excessivo',
-        detail: `RF Camber de ${setup.rf_camber}° é muito negativo. Desgaste no interior do pneu. Reduza para -4° a -6°.`
-      });
+
+    // ─── B/C: Track bar ───
+    if (setup.lr_trackbar && setup.rr_trackbar) {
+      const tbDiff = Math.abs(setup.lr_trackbar - setup.rr_trackbar);
+      if (tbDiff > 25) {
+        suggestions.push({ icon: '⚠️', title: 'Grande diferença Track Bar LR/RR',
+          detail: `LR Track Bar: ${setup.lr_trackbar}mm vs RR: ${setup.rr_trackbar}mm (diferença ${tbDiff}mm). Verifique ângulo do track bar.` });
+      }
+    }
+
+    // ─── B/C: RF Camber (oval: negative right side) ───
+    if (setup.rf_camber) {
+      if (setup.rf_camber > -1.5) {
+        suggestions.push({ icon: '⚠️', title: 'RF Camber insuficiente (B/C oval)',
+          detail: `RF Camber ${setup.rf_camber}° é muito positivo para oval. Recomendado: -2° a -5°. Desgaste excessivo no exterior do RF.` });
+      }
+    }
+    // ─── LF Camber (B/C oval: positive left side) ───
+    if (setup.lf_camber) {
+      if (setup.lf_camber < 3) {
+        suggestions.push({ icon: '⚠️', title: 'LF Camber baixo (B/C oval)',
+          detail: `LF Camber ${setup.lf_camber}° é baixo para oval. Recomendado: +4° a +7°. Desgaste no exterior do LF.` });
+      }
+    }
+
+  } else {
+    // ─── CLASS A: original logic ───
+    if (setup.rf_psi && setup.rr_psi) {
+      if (setup.rf_psi < setup.rr_psi) {
+        suggestions.push({ icon: '🔴', title: 'Alerta: RF PSI menor que RR PSI',
+          detail: `RF (${setup.rf_psi}) < RR (${setup.rr_psi}): Configuração incomum. RR alto causa loose crônico. Considere aumentar RF ou reduzir RR.` });
+      }
+    }
+    const lf_s = setup.lf_spring, rf_s = setup.rf_spring;
+    if (lf_s && rf_s && setup.lr_spring && setup.rr_spring) {
+      const springBalance = (rf_s - lf_s) / (lf_s + rf_s) * 100;
+      if (springBalance > 10) {
+        suggestions.push({ icon: '🔵', title: 'Tendência TIGHT: RF muito rígida vs LF',
+          detail: `RF (${rf_s}) muito maior que LF (${lf_s}). Setup tende para tight geral. Reduza RF spring ou aumente LF spring.` });
+      }
+      const rearStiff = (setup.rr_spring + setup.lr_spring) / 2;
+      const frontStiff = (rf_s + lf_s) / 2;
+      if (rearStiff > frontStiff * 0.45) {
+        suggestions.push({ icon: '🔴', title: 'Traseiras relativamente firmes',
+          detail: `Média traseiras (${rearStiff.toFixed(0)}) vs dianteiras (${frontStiff.toFixed(0)}). Relação incomum – monitore loose em aceleração.` });
+      }
+    }
+    if (setup.brake_bias) {
+      if (setup.brake_bias > 58) suggestions.push({ icon: '⚠️', title: 'Brake Bias muito alto dianteiro',
+        detail: `${setup.brake_bias}% dianteiro é muito alto. Risco de trava do dianteiro. Reduza para 54-57%.` });
+      if (setup.brake_bias < 51) suggestions.push({ icon: '⚠️', title: 'Brake Bias muito traseiro',
+        detail: `${setup.brake_bias}% é muito baixo para oval. Risco de travamento traseiro. Aumente para 53-56%.` });
+    }
+    if (setup.cross_weight) {
+      if (setup.cross_weight < 48.5) suggestions.push({ icon: '🔴', title: 'Cross Weight muito baixo',
+        detail: `${setup.cross_weight}% cross weight. Carro pode estar muito loose. Range ideal: 49.5-51.5%.` });
+      if (setup.cross_weight > 52) suggestions.push({ icon: '🔵', title: 'Cross Weight alto',
+        detail: `${setup.cross_weight}% pode causar tight crônico. Considere reduzir para 50-51%.` });
+    }
+    if (setup.rf_camber) {
+      if (setup.rf_camber > -2) suggestions.push({ icon: '⚠️', title: 'RF Camber insuficiente',
+        detail: `RF Camber de ${setup.rf_camber}° é muito pouco para oval. Recomendado: -3.5° a -6.0°.` });
+      if (setup.rf_camber < -7) suggestions.push({ icon: '⚠️', title: 'RF Camber excessivo',
+        detail: `RF Camber de ${setup.rf_camber}° é muito negativo. Desgaste no interior do pneu. Reduza para -4° a -6°.` });
     }
   }
 
@@ -1194,15 +1769,17 @@ window.saveCurrentSetup = function() {
 };
 
 function saveHistory() {
-  try { localStorage.setItem('nascar_setups', JSON.stringify(AppState.setupHistory)); } catch(e) {}
+  const cls = window.AppClass || 'A';
+  const key = 'nascar_setups_' + cls;
+  try {
+    localStorage.setItem(key, JSON.stringify(AppState.setupHistory));
+    // Also save to legacy key for Class A
+    if (cls === 'A') localStorage.setItem('nascar_setups', JSON.stringify(AppState.setupHistory));
+  } catch(e) {}
 }
 
 function loadHistory() {
-  try {
-    const saved = localStorage.getItem('nascar_setups');
-    if (saved) AppState.setupHistory = JSON.parse(saved);
-  } catch(e) {}
-  renderHistoryList();
+  loadHistoryForClass(window.AppClass || 'A');
 }
 
 function renderHistoryList() {
@@ -1319,34 +1896,80 @@ window.compareSetups = function(idx) {
 
 // ─── TEMPLATES ────────────────────────────────────────────────────
 window.loadTemplate = function(type) {
-  const templates = {
+  const cls = window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+
+  const templatesA = {
     superspeedway: { name: 'Superspeedway Base', lf_psi:26, rf_psi:26, lr_psi:24, rr_psi:24, lf_spring:600, rf_spring:600, lr_spring:200, rr_spring:225, nose_weight:52.5, cross_weight:50.2, brake_bias:54.0, lf_camber:3.8, rf_camber:-4.5, lf_caster:4.0, rf_caster:6.0, f_arb_diam:'1.375', f_arb_arm:3, r_arb_diam:'1.375', r_arb_arm:2, lf_lsc:4, rf_lsc:5, lr_lsc:4, rr_lsc:4, lf_hsc:3, rf_hsc:4, lr_hsc:3, rr_hsc:4 },
     intermediate: { name: 'Intermediate Base', lf_psi:28, rf_psi:30, lr_psi:22, rr_psi:26, lf_spring:550, rf_spring:650, lr_spring:175, rr_spring:250, nose_weight:52.2, cross_weight:50.5, brake_bias:54.5, lf_camber:4.0, rf_camber:-5.0, lf_caster:4.0, rf_caster:6.5, f_arb_diam:'1.375', f_arb_arm:3, r_arb_diam:'1.375', r_arb_arm:3, lf_lsc:5, rf_lsc:6, lr_lsc:4, rr_lsc:5, lf_hsc:4, rf_hsc:5, lr_hsc:4, rr_hsc:5 },
     shorttrack: { name: 'Short Track Base', lf_psi:30, rf_psi:35, lr_psi:24, rr_psi:30, lf_spring:800, rf_spring:900, lr_spring:250, rr_spring:350, nose_weight:51.5, cross_weight:51.0, brake_bias:56.0, lf_camber:4.5, rf_camber:-6.0, lf_caster:4.5, rf_caster:7.0, f_arb_diam:'2.00', f_arb_arm:5, r_arb_diam:'1.375', r_arb_arm:4, lf_lsc:7, rf_lsc:8, lr_lsc:5, rr_lsc:6, lf_hsc:6, rf_hsc:7, lr_hsc:5, rr_hsc:6 },
     flat: { name: 'Flat Track Base', lf_psi:31, rf_psi:37, lr_psi:23, rr_psi:31, lf_spring:800, rf_spring:900, lr_spring:250, rr_spring:325, nose_weight:51.5, cross_weight:51.2, brake_bias:56.5, lf_camber:5.0, rf_camber:-6.5, lf_caster:4.5, rf_caster:7.0, f_arb_diam:'2.00', f_arb_arm:5, r_arb_diam:'1.375', r_arb_arm:4, lf_lsc:7, rf_lsc:8, lr_lsc:5, rr_lsc:6, lf_hsc:6, rf_hsc:7, lr_hsc:5, rr_hsc:6 }
   };
 
+  const templatesB = {
+    superspeedway: { name: 'B – Superspeedway Base', lf_psi:172, rf_psi:310, lr_psi:172, rr_psi:310, lf_shock_spring:1575, rf_shock_spring:1575, lf_spring:1575, rf_spring:1575, lr_spring:60, rr_spring:30, lf_rh:102, rf_rh:105, lr_rh:155, rr_rh:158, nose_weight:51.0, cross_weight:50.0, brake_bias:64.0, lf_camber:5.5, rf_camber:-3.0, lf_caster:13.0, rf_caster:13.0, f_arb_diam:'51', f_arb_arm:5 },
+    intermediate: { name: 'B – Intermediate Base', lf_psi:172, rf_psi:310, lr_psi:172, rr_psi:310, lf_shock_spring:1575, rf_shock_spring:1575, lf_spring:1575, rf_spring:1575, lr_spring:70, rr_spring:35, lf_rh:108, rf_rh:110, lr_rh:162, rr_rh:164, nose_weight:51.1, cross_weight:52.0, brake_bias:65.0, lf_camber:5.9, rf_camber:-3.3, lf_caster:13.3, rf_caster:13.3, f_arb_diam:'51', f_arb_arm:5 },
+    shorttrack: { name: 'B – Short Track Base', lf_psi:180, rf_psi:320, lr_psi:180, rr_psi:320, lf_shock_spring:1750, rf_shock_spring:1750, lf_spring:1750, rf_spring:1750, lr_spring:90, rr_spring:45, lf_rh:112, rf_rh:115, lr_rh:165, rr_rh:168, nose_weight:51.5, cross_weight:52.5, brake_bias:66.0, lf_camber:6.5, rf_camber:-4.0, lf_caster:13.5, rf_caster:13.5, f_arb_diam:'54', f_arb_arm:6 },
+    flat: { name: 'B – Flat Track Base', lf_psi:179, rf_psi:315, lr_psi:179, rr_psi:315, lf_shock_spring:1650, rf_shock_spring:1650, lf_spring:1650, rf_spring:1650, lr_spring:75, rr_spring:40, lf_rh:110, rf_rh:112, lr_rh:163, rr_rh:166, nose_weight:51.3, cross_weight:51.5, brake_bias:65.5, lf_camber:6.2, rf_camber:-3.5, lf_caster:13.2, rf_caster:13.2, f_arb_diam:'51', f_arb_arm:5 }
+  };
+
+  const templatesC = {
+    superspeedway: { name: 'C – Superspeedway Base', lf_psi:179, rf_psi:310, lr_psi:179, rr_psi:310, lf_spring:1575, rf_spring:1575, lr_spring:110, rr_spring:200, lf_rh:110, rf_rh:108, lr_rh:122, rr_rh:120, nose_weight:49.5, cross_weight:50.0, brake_bias:61.0, lf_camber:5.5, rf_camber:-3.0, lf_caster:7.5, rf_caster:7.5, f_arb_diam:'60', f_arb_arm:5 },
+    intermediate: { name: 'C – Intermediate Base', lf_psi:179, rf_psi:310, lr_psi:179, rr_psi:310, lf_spring:1575, rf_spring:1575, lr_spring:131, rr_spring:236, lf_rh:116, rf_rh:114, lr_rh:128, rr_rh:126, nose_weight:50.1, cross_weight:50.5, brake_bias:62.0, lf_camber:6.0, rf_camber:-3.0, lf_caster:7.7, rf_caster:7.7, f_arb_diam:'64', f_arb_arm:6 },
+    shorttrack: { name: 'C – Short Track Base', lf_psi:185, rf_psi:320, lr_psi:185, rr_psi:320, lf_spring:1750, rf_spring:1750, lr_spring:150, rr_spring:280, lf_rh:120, rf_rh:118, lr_rh:132, rr_rh:130, nose_weight:50.5, cross_weight:51.0, brake_bias:63.0, lf_camber:6.5, rf_camber:-3.5, lf_caster:8.0, rf_caster:8.0, f_arb_diam:'64', f_arb_arm:6 },
+    flat: { name: 'C – Flat Track Base', lf_psi:182, rf_psi:315, lr_psi:182, rr_psi:315, lf_spring:1650, rf_spring:1650, lr_spring:140, rr_spring:250, lf_rh:118, rf_rh:116, lr_rh:130, rr_rh:128, nose_weight:50.3, cross_weight:50.8, brake_bias:62.5, lf_camber:6.2, rf_camber:-3.2, lf_caster:7.8, rf_caster:7.8, f_arb_diam:'64', f_arb_arm:5 }
+  };
+
+  const allTemplates = { A: templatesA, B: templatesB, C: templatesC };
+  const templates = allTemplates[cls] || templatesA;
+
   const tmpl = templates[type];
   if (!tmpl) return;
 
-  // Populate manual form
-  document.getElementById('setup-name-input').value = tmpl.name;
-  const fields = {
-    'mf-lf-psi': tmpl.lf_psi, 'mf-rf-psi': tmpl.rf_psi, 'mf-lr-psi': tmpl.lr_psi, 'mf-rr-psi': tmpl.rr_psi,
-    'mf-lf-spring': tmpl.lf_spring, 'mf-rf-spring': tmpl.rf_spring, 'mf-lr-spring': tmpl.lr_spring, 'mf-rr-spring': tmpl.rr_spring,
-    'mf-nose': tmpl.nose_weight, 'mf-cross': tmpl.cross_weight, 'mf-bb': tmpl.brake_bias,
-    'mf-lf-camber': tmpl.lf_camber, 'mf-rf-camber': tmpl.rf_camber, 'mf-lf-caster': tmpl.lf_caster, 'mf-rf-caster': tmpl.rf_caster,
-    'mf-lf-lsc': tmpl.lf_lsc, 'mf-rf-lsc': tmpl.rf_lsc, 'mf-lr-lsc': tmpl.lr_lsc, 'mf-rr-lsc': tmpl.rr_lsc,
-    'mf-lf-hsc': tmpl.lf_hsc, 'mf-rf-hsc': tmpl.rf_hsc, 'mf-lr-hsc': tmpl.lr_hsc, 'mf-rr-hsc': tmpl.rr_hsc,
-  };
-  Object.entries(fields).forEach(([id, val]) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val;
-  });
-  if (tmpl.f_arb_diam) document.getElementById('mf-f-arb-diam').value = tmpl.f_arb_diam;
-  if (tmpl.f_arb_arm) document.getElementById('mf-f-arb-arm').value = tmpl.f_arb_arm;
-  if (tmpl.r_arb_diam) document.getElementById('mf-r-arb-diam').value = tmpl.r_arb_diam;
-  if (tmpl.r_arb_arm) document.getElementById('mf-r-arb-arm').value = tmpl.r_arb_arm;
+  if (isBorC) {
+    // For B/C: rebuild form first then populate
+    renderManualForm(cls);
+    const fields = {
+      'mf-lf-psi': tmpl.lf_psi, 'mf-rf-psi': tmpl.rf_psi, 'mf-lr-psi': tmpl.lr_psi, 'mf-rr-psi': tmpl.rr_psi,
+      'mf-lf-shock-spring': tmpl.lf_shock_spring, 'mf-rf-shock-spring': tmpl.rf_shock_spring,
+      'mf-lf-spring': tmpl.lf_spring, 'mf-rf-spring': tmpl.rf_spring,
+      'mf-lr-spring': tmpl.lr_spring, 'mf-rr-spring': tmpl.rr_spring,
+      'mf-lf-rh': tmpl.lf_rh, 'mf-rf-rh': tmpl.rf_rh, 'mf-lr-rh': tmpl.lr_rh, 'mf-rr-rh': tmpl.rr_rh,
+      'mf-nose': tmpl.nose_weight, 'mf-cross': tmpl.cross_weight, 'mf-bb': tmpl.brake_bias,
+      'mf-lf-camber': tmpl.lf_camber, 'mf-rf-camber': tmpl.rf_camber,
+      'mf-lf-caster': tmpl.lf_caster || '', 'mf-rf-caster': tmpl.rf_caster || '',
+      'mf-lf-lsc': tmpl.lf_lsc||5, 'mf-rf-lsc': tmpl.rf_lsc||5, 'mf-lr-lsc': tmpl.lr_lsc||4, 'mf-rr-lsc': tmpl.rr_lsc||4,
+      'mf-lf-hsc': tmpl.lf_hsc||4, 'mf-rf-hsc': tmpl.rf_hsc||4, 'mf-lr-hsc': tmpl.lr_hsc||3, 'mf-rr-hsc': tmpl.rr_hsc||3,
+      'mf-lf-lsr': tmpl.lf_lsr||6, 'mf-rf-lsr': tmpl.rf_lsr||6, 'mf-lr-lsr': tmpl.lr_lsr||5, 'mf-rr-lsr': tmpl.rr_lsr||5,
+    };
+    if (tmpl.f_arb_diam) fields['mf-f-arb-diam'] = tmpl.f_arb_diam;
+    if (tmpl.f_arb_arm) fields['mf-f-arb-arm'] = tmpl.f_arb_arm;
+    Object.entries(fields).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== '') el.value = val;
+    });
+    const nameEl = document.getElementById('setup-name-input');
+    if (nameEl) nameEl.value = tmpl.name;
+  } else {
+    // Class A: populate existing static form
+    document.getElementById('setup-name-input').value = tmpl.name;
+    const fields = {
+      'mf-lf-psi': tmpl.lf_psi, 'mf-rf-psi': tmpl.rf_psi, 'mf-lr-psi': tmpl.lr_psi, 'mf-rr-psi': tmpl.rr_psi,
+      'mf-lf-spring': tmpl.lf_spring, 'mf-rf-spring': tmpl.rf_spring, 'mf-lr-spring': tmpl.lr_spring, 'mf-rr-spring': tmpl.rr_spring,
+      'mf-nose': tmpl.nose_weight, 'mf-cross': tmpl.cross_weight, 'mf-bb': tmpl.brake_bias,
+      'mf-lf-camber': tmpl.lf_camber, 'mf-rf-camber': tmpl.rf_camber, 'mf-lf-caster': tmpl.lf_caster, 'mf-rf-caster': tmpl.rf_caster,
+      'mf-lf-lsc': tmpl.lf_lsc, 'mf-rf-lsc': tmpl.rf_lsc, 'mf-lr-lsc': tmpl.lr_lsc, 'mf-rr-lsc': tmpl.rr_lsc,
+      'mf-lf-hsc': tmpl.lf_hsc, 'mf-rf-hsc': tmpl.rf_hsc, 'mf-lr-hsc': tmpl.lr_hsc, 'mf-rr-hsc': tmpl.rr_hsc,
+    };
+    Object.entries(fields).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    });
+    if (tmpl.f_arb_diam) { const el = document.getElementById('mf-f-arb-diam'); if(el) el.value = tmpl.f_arb_diam; }
+    if (tmpl.f_arb_arm) { const el = document.getElementById('mf-f-arb-arm'); if(el) el.value = tmpl.f_arb_arm; }
+    if (tmpl.r_arb_diam) { const el = document.getElementById('mf-r-arb-diam'); if(el) el.value = tmpl.r_arb_diam; }
+    if (tmpl.r_arb_arm) { const el = document.getElementById('mf-r-arb-arm'); if(el) el.value = tmpl.r_arb_arm; }
+  }
 
   // Switch to manual tab
   document.querySelectorAll('.itab').forEach(t => t.classList.remove('active'));
@@ -1354,12 +1977,172 @@ window.loadTemplate = function(type) {
   document.querySelector('.itab[data-tab="manual"]').classList.add('active');
   document.getElementById('tab-manual').classList.add('active');
 
-  AppState.currentSetup = { ...tmpl };
+  AppState.currentSetup = { ...tmpl, source: 'manual', carClass: cls };
   analyzeManualSetup();
   showNotification('Template "' + tmpl.name + '" carregado!', 'success');
 };
 
-// ─── DIAGNOSIS ────────────────────────────────────────────────────
+// ─── DYNAMIC PITSTOP MATRIX ──────────────────────────────────────
+function renderPitstopMatrix(cls) {
+  const container = document.querySelector('.pitstop-matrix');
+  if (!container) return;
+  const isBorC = cls === 'B' || cls === 'C';
+  if (!isBorC) {
+    // Class A: keep original static matrix (already in DOM from HTML)
+    return;
+  }
+  // B/C specific pit stop matrix (track bar, spring perch, ARB instead of springs)
+  container.innerHTML = `
+    <div class="pm-header">
+      <div>Problema de Handling</div>
+      <div>Brake Bias</div>
+      <div>LF ${cls==='B'?'kPa':'kPa'}</div>
+      <div>RF kPa</div>
+      <div>LR kPa</div>
+      <div>RR kPa</div>
+      <div>Track Bar</div>
+      <div>Spring Perch / ARB</div>
+    </div>
+    <div class="pm-row loose">
+      <div class="pm-label">🔴 Loose Entry</div>
+      <div class="pm-val up">↑ Mais dianteiro</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val down">↓ Abaixar TB</div>
+      <div class="pm-val">Soltar ARB Preload</div>
+    </div>
+    <div class="pm-row loose">
+      <div class="pm-label">🔴 Loose Center</div>
+      <div class="pm-val up">↑ Mais dianteiro</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val down">↓ Abaixar TB</div>
+      <div class="pm-val">LR Perch ↑ (mais jato)</div>
+    </div>
+    <div class="pm-row loose">
+      <div class="pm-label">🔴 Loose Exit</div>
+      <div class="pm-val">Direção +</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val down">↓ Abaixar TB</div>
+      <div class="pm-val">Truck Arm → Bottom</div>
+    </div>
+    <div class="pm-row tight">
+      <div class="pm-label">🔵 Tight Entry</div>
+      <div class="pm-val down">↓ Mais traseiro</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val up">↑ Subir TB</div>
+      <div class="pm-val">Apertar ARB Preload</div>
+    </div>
+    <div class="pm-row tight">
+      <div class="pm-label">🔵 Tight Center</div>
+      <div class="pm-val down">↓ Mais traseiro</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val up">↑ Subir TB</div>
+      <div class="pm-val">RR Perch ↓ (menos jato)</div>
+    </div>
+    <div class="pm-row tight">
+      <div class="pm-label">🔵 Tight Exit</div>
+      <div class="pm-val down">↓ Mais traseiro</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neu">0</div>
+      <div class="pm-val neg">-5</div>
+      <div class="pm-val pos">+5</div>
+      <div class="pm-val up">↑ Subir TB</div>
+      <div class="pm-val">Truck Arm → Top (cuidado)</div>
+    </div>
+  `;
+}
+
+// ─── B/C DIAGNOSIS MATRIX ────────────────────────────────────────
+window.DIAGNOSIS_MATRIX_BC = {
+  'loose-entry': {
+    type: 'loose', title: '🔴 Loose Entry – Classe B/C',
+    physics: 'Na entrada da curva, a traseira perde aderência antes do dianteiro. Em B/C, o Truck Arm e o Track Bar têm grande influência. Ballast Forward alto também aumenta carga na frente, aliviando a traseira.',
+    adjustments: [
+      { priority: 1, component: 'Brake Bias', direction: '↑ Aumentar dianteiro', current_typical: '64%', values: { mild: '+0.5%', moderate: '+1.0%', aggressive: '+1.5%' }, reason: 'Mais frenagem dianteira atrasa a entrada da traseira', pitroad: true },
+      { priority: 2, component: 'Track Bar Height', direction: '↓ Abaixar LR/RR', current_typical: '160mm', values: { mild: '-3mm', moderate: '-6mm', aggressive: '-10mm' }, reason: 'Track Bar mais baixo = carro mais tight entry', pitroad: false },
+      { priority: 3, component: 'LF PSI', direction: '↓ Reduzir', current_typical: '172 kPa', values: { mild: '-5 kPa', moderate: '-10 kPa', aggressive: '-15 kPa' }, reason: 'Mais carga no LF aumenta estabilidade de entrada', pitroad: true },
+      { priority: 4, component: 'Truck Arm Preload', direction: '↑ Aumentar', current_typical: '0 Nm', values: { mild: '+2 Nm', moderate: '+4 Nm', aggressive: '+6 Nm' }, reason: 'Mais preload = mais anti-squat = mais grip traseiro', pitroad: false },
+      { priority: 5, component: 'ARB Front Preload', direction: 'Afrouxar (menos negativo)', current_typical: '-182 Nm', values: { mild: '+20 Nm', moderate: '+40 Nm', aggressive: '+60 Nm' }, reason: 'ARB mais solto reduz roll stiffness frontal = mais rotação', pitroad: false },
+    ],
+    pitstop_summary: '↑ Brake Bias +0.5-1%. ↓ LF PSI -5-10 kPa. ↑ RR PSI +5 kPa se disponível.'
+  },
+  'loose-center': {
+    type: 'loose', title: '🔴 Loose Center – Classe B/C',
+    physics: 'No meio da curva (steady-state cornering), a traseira escorrega continuamente. Em B/C, LR Spring muito macia ou Track Bar alto causam isso. Truck Arm Mount no topo amplia o problema.',
+    adjustments: [
+      { priority: 1, component: 'LR Spring', direction: '↑ Aumentar rigidez', current_typical: '70 N/mm', values: { mild: '+5 N/mm', moderate: '+10 N/mm', aggressive: '+15 N/mm' }, reason: 'LR mais rígida aumenta carga traseira esquerda = mais tight center', pitroad: false },
+      { priority: 2, component: 'Track Bar Height', direction: '↓ Abaixar LR/RR', current_typical: '160mm', values: { mild: '-3mm', moderate: '-6mm', aggressive: '-10mm' }, reason: 'TB mais baixo = mais carga traseira = menos loose center', pitroad: false },
+      { priority: 3, component: 'Cross Weight', direction: '↑ Aumentar', current_typical: '51.5%', values: { mild: '+0.2%', moderate: '+0.4%', aggressive: '+0.7%' }, reason: 'Mais cross weight estabiliza o carro no centro da curva', pitroad: false },
+      { priority: 4, component: 'Truck Arm Mount', direction: 'Mudar para Bottom', current_typical: 'top', values: { mild: '→ bottom', moderate: '→ bottom', aggressive: '→ bottom' }, reason: 'Bottom = mais anti-squat = mais grip traseiro center', pitroad: false },
+      { priority: 5, component: 'LR PSI', direction: '↑ Aumentar', current_typical: '172 kPa', values: { mild: '+5 kPa', moderate: '+10 kPa', aggressive: '+15 kPa' }, reason: 'Mais pressão LR = mais carga LR = mais tight center', pitroad: true },
+    ],
+    pitstop_summary: '↑ LR PSI +5-10 kPa. ↑ Cross Weight via ajuste de jato LR. ↑ Brake Bias +0.5% se necessário.'
+  },
+  'loose-exit': {
+    type: 'loose', title: '🔴 Loose Exit – Classe B/C',
+    physics: 'Na aceleração à saída da curva, a traseira perde tração. Em B/C, RR Spring macia, Truck Arm no topo e Track Bar alto são causas principais.',
+    adjustments: [
+      { priority: 1, component: 'RR Spring', direction: '↑ Aumentar rigidez', current_typical: '35 N/mm', values: { mild: '+5 N/mm', moderate: '+10 N/mm', aggressive: '+20 N/mm' }, reason: 'RR mais rígida sustenta o carro na saída = menos loose', pitroad: false },
+      { priority: 2, component: 'Truck Arm Mount', direction: 'Mudar para Bottom', current_typical: 'top', values: { mild: '→ bottom', moderate: '→ bottom', aggressive: '→ bottom' }, reason: 'Bottom = mais grip traseiro em aceleração', pitroad: false },
+      { priority: 3, component: 'Track Bar Height', direction: '↓ Abaixar', current_typical: '160mm', values: { mild: '-3mm', moderate: '-6mm', aggressive: '-10mm' }, reason: 'TB baixo = carro mais tight = menos loose exit', pitroad: false },
+      { priority: 4, component: 'Truck Arm Preload', direction: '↑ Aumentar', current_typical: '0 Nm', values: { mild: '+2 Nm', moderate: '+4 Nm', aggressive: '+7 Nm' }, reason: 'Mais preload = mais anti-squat = melhor saída de curva', pitroad: false },
+      { priority: 5, component: 'RR PSI', direction: '↓ Reduzir', current_typical: '310 kPa', values: { mild: '-5 kPa', moderate: '-10 kPa', aggressive: '-15 kPa' }, reason: 'Menos PSI no RR = mais borracha em contato = mais grip de tração', pitroad: true },
+    ],
+    pitstop_summary: '↓ RR PSI -5-10 kPa. ↑ LR PSI +5 kPa. Truck Arm → Bottom se possível.'
+  },
+  'tight-entry': {
+    type: 'tight', title: '🔵 Tight Entry – Classe B/C',
+    physics: 'O dianteiro não gira na entrada da curva (understeer). Em B/C, ARB dianteiro muito rígido, Cross Weight alto ou Nose Weight alto são causas comuns.',
+    adjustments: [
+      { priority: 1, component: 'Brake Bias', direction: '↓ Reduzir dianteiro', current_typical: '65%', values: { mild: '-0.5%', moderate: '-1.0%', aggressive: '-1.5%' }, reason: 'Menos frenagem dianteira = menos load transfer = dianteiro mais livre', pitroad: true },
+      { priority: 2, component: 'Cross Weight', direction: '↓ Reduzir', current_typical: '52%', values: { mild: '-0.2%', moderate: '-0.4%', aggressive: '-0.7%' }, reason: 'Menos cross weight libera a entrada do carro', pitroad: false },
+      { priority: 3, component: 'ARB Front Preload', direction: '↓ Reduzir (mais negativo)', current_typical: '-182 Nm', values: { mild: '-20 Nm', moderate: '-40 Nm', aggressive: '-60 Nm' }, reason: 'ARB mais solto = mais compressão dianteira = mais rotação', pitroad: false },
+      { priority: 4, component: 'Track Bar Height', direction: '↑ Subir LR/RR', current_typical: '160mm', values: { mild: '+3mm', moderate: '+6mm', aggressive: '+10mm' }, reason: 'TB alto = transfere carga para fora = dianteiro mais livre', pitroad: false },
+      { priority: 5, component: 'RF PSI', direction: '↓ Reduzir', current_typical: '310 kPa', values: { mild: '-5 kPa', moderate: '-10 kPa', aggressive: '-15 kPa' }, reason: 'Menos pressão RF = mais área de contato = mais rotação', pitroad: true },
+    ],
+    pitstop_summary: '↓ Brake Bias -0.5-1%. ↓ RF PSI -5-10 kPa. ↑ RR PSI +5 kPa.'
+  },
+  'tight-center': {
+    type: 'tight', title: '🔵 Tight Center – Classe B/C',
+    physics: 'No meio da curva, o carro não gira (understeer). LR Spring rígida, ARB dianteiro rígido e Nose Weight alto causam tight center em B/C.',
+    adjustments: [
+      { priority: 1, component: 'LR Spring', direction: '↓ Reduzir rigidez', current_typical: '70 N/mm', values: { mild: '-5 N/mm', moderate: '-10 N/mm', aggressive: '-15 N/mm' }, reason: 'LR mais macia libera a traseira esquerda = mais rotação center', pitroad: false },
+      { priority: 2, component: 'Cross Weight', direction: '↓ Reduzir', current_typical: '52%', values: { mild: '-0.2%', moderate: '-0.4%', aggressive: '-0.7%' }, reason: 'Menos cross weight reduz tight center', pitroad: false },
+      { priority: 3, component: 'ARB Front Arm', direction: 'Mudar para posição mais macia', current_typical: 'P5', values: { mild: 'P4', moderate: 'P3', aggressive: 'P2' }, reason: 'ARB mais macio = menos roll stiffness = mais rotação', pitroad: false },
+      { priority: 4, component: 'Ballast Forward', direction: '↓ Mover para trás', current_typical: '838mm', values: { mild: '-50mm', moderate: '-100mm', aggressive: '-150mm' }, reason: 'Menos ballast forward = menos nose weight = menos tight', pitroad: false },
+      { priority: 5, component: 'LF PSI', direction: '↑ Aumentar', current_typical: '172 kPa', values: { mild: '+5 kPa', moderate: '+10 kPa', aggressive: '+15 kPa' }, reason: 'LF alto = menos carga LF = libera rotação', pitroad: true },
+    ],
+    pitstop_summary: '↑ LF PSI +5-10 kPa. ↓ RF PSI -5 kPa. ↓ Brake Bias -0.5%.'
+  },
+  'tight-exit': {
+    type: 'tight', title: '🔵 Tight Exit – Classe B/C',
+    physics: 'Na aceleração, o carro empurra para fora (push). Em B/C, Cross Weight alto, ARB muito rígido ou RR muito macia causam tight exit.',
+    adjustments: [
+      { priority: 1, component: 'Cross Weight', direction: '↓ Reduzir', current_typical: '52%', values: { mild: '-0.2%', moderate: '-0.5%', aggressive: '-0.8%' }, reason: 'Menos cross weight libera a saída', pitroad: false },
+      { priority: 2, component: 'Track Bar Height', direction: '↑ Subir LR/RR', current_typical: '160mm', values: { mild: '+3mm', moderate: '+6mm', aggressive: '+10mm' }, reason: 'TB alto = mais carga traseira externa = melhor saída', pitroad: false },
+      { priority: 3, component: 'RR Spring', direction: '↓ Reduzir rigidez', current_typical: '35 N/mm', values: { mild: '-5 N/mm', moderate: '-10 N/mm', aggressive: '-15 N/mm' }, reason: 'RR mais macia libera a saída', pitroad: false },
+      { priority: 4, component: 'Truck Arm Mount', direction: 'Mudar para Top', current_typical: 'bottom', values: { mild: '→ top', moderate: '→ top', aggressive: '→ top' }, reason: 'Top = menos anti-squat = mais transferência traseira = mais rotação exit (cuidado com loose)', pitroad: false },
+      { priority: 5, component: 'RF PSI', direction: '↓ Reduzir', current_typical: '310 kPa', values: { mild: '-5 kPa', moderate: '-10 kPa', aggressive: '-15 kPa' }, reason: 'Menos RF PSI = mais rotação exit', pitroad: true },
+    ],
+    pitstop_summary: '↑ RF PSI... mas ↓ pode ajudar tight exit. ↑ RR PSI +5 kPa. Ajustar track bar.'
+  },
+};
+
+
 window.toggleIssue = function(btn) {
   const issue = btn.dataset.issue;
   btn.classList.toggle('active');
@@ -1431,12 +2214,15 @@ window.runDiagnosis = function() {
   AppState.diagnosisCount++;
   updateDashboard();
 
-  const diag = window.DIAGNOSIS_MATRIX;
+  const cls = window.AppClass || 'A';
+  const isBorC = cls === 'B' || cls === 'C';
+  // Use B/C matrix if on those classes, else standard
+  const diag = (isBorC && window.DIAGNOSIS_MATRIX_BC) ? window.DIAGNOSIS_MATRIX_BC : window.DIAGNOSIS_MATRIX;
   let html = '';
 
   AppState.activeIssues.forEach(issue => {
-    if (!diag[issue]) return;
-    const d = diag[issue];
+    const d = diag[issue] || window.DIAGNOSIS_MATRIX?.[issue]; // fallback to standard
+    if (!d) return;
 
     html += `
     <div class="diag-result-block">
@@ -1471,6 +2257,10 @@ window.runDiagnosis = function() {
       </div>
     </div>`;
   });
+
+  if (!html) {
+    html = '<div class="analysis-empty"><div class="ae-icon">⚡</div><div class="ae-text">Nenhum diagnóstico disponível para os problemas selecionados nesta classe.</div></div>';
+  }
 
   document.getElementById('diag-empty').style.display = 'none';
   const results = document.getElementById('diag-results');
