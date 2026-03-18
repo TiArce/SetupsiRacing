@@ -43,6 +43,265 @@
   --shadow-gold: 0 0 20px rgba(232,160,0,0.15);
 
   --transition: 0.2s ease;
+
+  /* Class color vars */
+  --class-a: #e8a000;
+  --class-b: #5c9fe8;
+  --class-c: #e85c5c;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CLASS SELECTOR OVERLAY
+═══════════════════════════════════════════════════════════════ */
+.class-selector-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(ellipse at 50% 30%, #0d1525 0%, #050810 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+.class-selector-overlay.hidden {
+  display: none;
+}
+.cso-inner {
+  width: 100%;
+  max-width: 1100px;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+.cso-logo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.cso-flag { font-size: 2.5rem; }
+.cso-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+}
+.cso-sub {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-family: 'Rajdhani', sans-serif;
+  letter-spacing: 0.08em;
+}
+.cso-headline {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-align: center;
+  opacity: 0.85;
+}
+.cso-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  width: 100%;
+}
+.cso-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+.cso-card:hover {
+  transform: translateY(-4px);
+}
+.cso-card[data-class="A"]:hover { border-color: var(--class-a); box-shadow: 0 8px 32px rgba(232,160,0,0.2); }
+.cso-card[data-class="B"]:hover { border-color: var(--class-b); box-shadow: 0 8px 32px rgba(92,159,232,0.2); }
+.cso-card[data-class="C"]:hover { border-color: var(--class-c); box-shadow: 0 8px 32px rgba(232,92,92,0.2); }
+
+.cso-card-header {
+  padding: 1.2rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.class-a { background: linear-gradient(135deg, rgba(232,160,0,0.18), rgba(232,160,0,0.05)); }
+.class-b { background: linear-gradient(135deg, rgba(92,159,232,0.18), rgba(92,159,232,0.05)); }
+.class-c { background: linear-gradient(135deg, rgba(232,92,92,0.18), rgba(232,92,92,0.05)); }
+
+.cso-car-emoji { font-size: 2.2rem; }
+.cso-class-badge {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 900;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  letter-spacing: 0.1em;
+}
+.badge-a { background: rgba(232,160,0,0.2); color: var(--class-a); border: 1px solid rgba(232,160,0,0.4); }
+.badge-b { background: rgba(92,159,232,0.2); color: var(--class-b); border: 1px solid rgba(92,159,232,0.4); }
+.badge-c { background: rgba(232,92,92,0.2); color: var(--class-c); border: 1px solid rgba(232,92,92,0.4); }
+
+.cso-card-body {
+  padding: 1rem 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cso-car-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.cso-series {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cso-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.3rem 0;
+}
+.cso-spec {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.cso-desc {
+  font-size: 0.77rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.cso-car-svg {
+  margin-top: 0.75rem;
+  opacity: 0.85;
+}
+.cso-car-svg svg { width: 100%; height: auto; }
+
+.cso-card-footer {
+  padding: 0.9rem 1.5rem;
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid var(--border);
+}
+.cso-select-btn {
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 8px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+.cso-select-btn:hover { opacity: 0.85; }
+.btn-a { background: var(--class-a); color: #000; }
+.btn-b { background: var(--class-b); color: #000; }
+.btn-c { background: var(--class-c); color: #fff; }
+
+.cso-footer {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* ── Class switch button in header ── */
+.class-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  margin-left: 0.75rem;
+}
+.class-switch-btn:hover { border-color: var(--gold); }
+.header-class-badge {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 10px;
+  letter-spacing: 0.08em;
+}
+
+/* ── Class theme override (applied to body) ── */
+body.class-b { --border-accent: var(--class-b); --gold: var(--class-b); --gold-bg: rgba(92,159,232,0.08); }
+body.class-c { --border-accent: var(--class-c); --gold: var(--class-c); --gold-bg: rgba(232,92,92,0.08); }
+
+/* ── Inline class badge in analysis sections ── */
+.class-badge-inline {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+.class-badge-inline.badge-b {
+  background: rgba(92,159,232,0.2);
+  color: var(--class-b);
+  border: 1px solid rgba(92,159,232,0.4);
+}
+.class-badge-inline.badge-c {
+  background: rgba(232,92,92,0.2);
+  color: var(--class-c);
+  border: 1px solid rgba(232,92,92,0.4);
+}
+
+/* ── Class B/C unit labels in forms ── */
+.unit-label-dynamic { font-size: 0.7rem; color: var(--text-dim); }
+
+/* ── Class specific header color ── */
+.header-class-a #app-header { border-bottom-color: rgba(232,160,0,0.3); }
+.header-class-b #app-header { border-bottom-color: rgba(92,159,232,0.3); }
+.header-class-c #app-header { border-bottom-color: rgba(232,92,92,0.3); }
+
+/* ── Class info banner (below header, above content) ── */
+.class-info-banner {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1.5rem;
+  font-size: 0.78rem;
+  border-bottom: 1px solid var(--border);
+}
+.class-info-banner.visible { display: flex; }
+.cib-label { font-weight: 700; }
+.cib-note { color: var(--text-secondary); }
+
+@media (max-width: 900px) {
+  .cso-cards { grid-template-columns: 1fr; }
+  .cso-title { font-size: 1.5rem; }
+}
+@media (max-width: 600px) {
+  .cso-inner { padding: 1rem; gap: 1.2rem; }
+  .cso-headline { font-size: 1.1rem; }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

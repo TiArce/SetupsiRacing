@@ -921,8 +921,27 @@ window.renderAdvancedSimulator = function() {
   const container = document.getElementById('adv-sim-root');
   if (!container) return;
 
+  // Apply class-specific defaults to state
+  const cls = window.AppClass || 'A';
+  const classDefs = window.CLASS_CONFIGS?.[cls]?.sim_defaults;
   const params = window.ADV_SIM_PARAMS;
   const groups = window.ADV_SIM_GROUPS;
+
+  // Map class sim_defaults to ADV_SIM_STATE keys
+  if (classDefs) {
+    const defMap = {
+      lf_psi:'lf_psi', rf_psi:'rf_psi', lr_psi:'lr_psi', rr_psi:'rr_psi',
+      lf_spring:'lf_spring', rf_spring:'rf_spring', lr_spring:'lr_spring', rr_spring:'rr_spring',
+      lf_rh:'lf_ride_height', rf_rh:'rf_ride_height', lr_rh:'lr_ride_height', rr_rh:'rr_ride_height',
+      cross_weight:'cross_weight', nose_weight:'nose_weight', brake_bias:'brake_bias',
+      lf_camber:'lf_camber', rf_camber:'rf_camber',
+    };
+    Object.entries(defMap).forEach(([defKey, simKey]) => {
+      if (classDefs[defKey] !== undefined && params[simKey]) {
+        window.ADV_SIM_STATE[simKey] = Math.max(params[simKey].min, Math.min(params[simKey].max, classDefs[defKey]));
+      }
+    });
+  }
 
   // Build group HTML
   let groupsHtml = '';
@@ -1545,7 +1564,7 @@ window.exportAdvSimSetup = function() {
   const blob = new Blob([out], { type:'text/plain' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = 'nascar-nextgen-setup.txt';
+  a.href = url; a.download = 'nascar-class' + (window.AppClass||'a').toLowerCase() + '-setup.txt';
   a.click(); URL.revokeObjectURL(url);
   showNotif('📤 Setup exportado!', 'var(--green)');
 };
